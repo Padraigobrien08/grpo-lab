@@ -21,5 +21,9 @@ train:
   # Adam's first step moves every weight by ~lr regardless of gradient size; on a tiny noisy
   # batch that alone shifts token log-probs by ~0.09 nats and collapses the policy. Warm up.
   warmup_steps: 10
+eval:
+  every: 3  # exercises the eval path: runs before step 1 and after step 3
+  num_examples: 8
+  batch_size: 8
 log:
   rollout_every: 1

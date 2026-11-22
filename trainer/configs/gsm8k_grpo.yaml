@@ -1,10 +1,12 @@
 # MVP run (M2) on a single rented GPU. Hyperparameters are a starting point to tune, not final.
+# Pilot first:  uv run train --config trainer/configs/gsm8k_grpo.yaml --override train.steps=20
 name: gsm8k-grpo
 seed: 0
 device: cuda
 model:
   name_or_path: Qwen/Qwen2.5-0.5B-Instruct
-  dtype: bfloat16
+  dtype: float32       # fp32 master weights: bf16 would round lr=1e-6 Adam updates to zero
+  amp_dtype: bfloat16  # bf16 compute for generation and forward passes
   gradient_checkpointing: true
 task:
   name: gsm8k
@@ -21,8 +23,15 @@ algo:
 train:
   steps: 300
   prompts_per_step: 16
-  micro_batch_size: 16
+  # Sequences per forward/backward. Completion logits alone are 8 x 512 x 152k fp32 = 2.5 GB;
+  # raise this once the pilot's memory/peak_gb shows headroom.
+  micro_batch_size: 8
   lr: 1.0e-6
   warmup_steps: 10
+eval:
+  every: 25
+  num_examples: 500  # SE of accuracy ~2.2 points at p=0.4
+  batch_size: 128
 log:
   rollout_every: 10
+  save_final: true

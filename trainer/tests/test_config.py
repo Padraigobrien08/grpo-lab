@@ -23,6 +23,11 @@ def test_unknown_keys_fail_loudly():
         load_config(CONFIGS / "toy.yaml", ["algo.btea=0.1"])
 
 
+def test_low_precision_master_weights_rejected():
+    with pytest.raises(ValidationError, match="amp_dtype"):
+        load_config(CONFIGS / "toy.yaml", ["model.dtype=bfloat16"])
+
+
 def test_model_needs_exactly_one_source():
     with pytest.raises(ValidationError):
         load_config(CONFIGS / "toy.yaml", ["model.name_or_path=foo"])

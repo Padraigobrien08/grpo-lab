@@ -15,6 +15,7 @@ import random
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -23,7 +24,8 @@ from grpo_lab.algo.advantages import group_advantages, zero_advantage_fraction
 from grpo_lab.algo.logprobs import completion_logprobs
 from grpo_lab.algo.losses import grpo_loss
 from grpo_lab.config import Config, load_config
-from grpo_lab.models import load_policy, resolve_device
+from grpo_lab.eval import greedy_eval
+from grpo_lab.models import autocast, load_policy, resolve_device
 from grpo_lab.rollout import RolloutBatch, generate_group_rollouts
 from grpo_lab.tasks import Prompt, Task, build_task
 from runstore import RunStore
@@ -33,6 +35,7 @@ from runstore import RunStore
 class TrainResult:
     run_id: str
     history: list[dict[str, float]] = field(default_factory=list)
+    eval_history: list[dict[str, float]] = field(default_factory=list)
 
 
 def seed_everything(seed: int) -> None:
@@ -57,13 +60,19 @@ def _micro_batches(n: int, size: int) -> list[slice]:
 
 @torch.no_grad()
 def _batched_logprobs(
-    model: torch.nn.Module, batch: RolloutBatch, micro: int, temperature: float
+    model: torch.nn.Module,
+    batch: RolloutBatch,
+    micro: int,
+    temperature: float,
+    amp_dtype: str | None,
 ) -> torch.Tensor:
     parts = []
+    device = batch.input_ids.device
     for mb in _micro_batches(batch.input_ids.shape[0], micro):
-        lp, _ = completion_logprobs(
-            model, batch.input_ids[mb], batch.attention_mask[mb], batch.prompt_len, temperature
-        )
+        with autocast(device, amp_dtype):
+            lp, _ = completion_logprobs(
+                model, batch.input_ids[mb], batch.attention_mask[mb], batch.prompt_len, temperature
+            )
         parts.append(lp)
     return torch.cat(parts)
 
@@ -105,8 +114,10 @@ def train(cfg: Config) -> TrainResult:
     device = resolve_device(cfg.device)
     model, tokenizer = load_policy(cfg.model, device)
     task = build_task(cfg, tokenizer)
-    algo, tc = cfg.algo, cfg.train
+    algo, tc, ec = cfg.algo, cfg.train, cfg.eval
+    amp = cfg.model.amp_dtype
     group = algo.group_size
+    eval_prompts = task.eval_prompts(ec.num_examples) if ec.every > 0 else []
 
     # The reference model is only needed for the KL term; skip the memory cost when beta == 0.
     ref_model = None
@@ -126,20 +137,43 @@ def train(cfg: Config) -> TrainResult:
     result = TrainResult(run_id=run_id)
     print(f"run {run_id} on {device} | store: {store.root}")
 
+    def run_eval(step: int) -> None:
+        t = time.perf_counter()
+        metrics = greedy_eval(
+            model,
+            task,
+            eval_prompts,
+            batch_size=ec.batch_size,
+            max_new_tokens=ec.max_new_tokens or algo.max_new_tokens,
+            amp_dtype=amp,
+        )
+        metrics["time/eval_s"] = time.perf_counter() - t
+        store.log_metrics(run_id, step, metrics)
+        result.eval_history.append({"step": step, **metrics})
+        print(
+            f"eval @ step {step:4d} | accuracy {metrics.get('eval/accuracy', float('nan')):.3f} "
+            f"| len {metrics['eval/len_mean']:.1f} | {metrics['time/eval_s']:.0f}s"
+        )
+
     try:
+        if eval_prompts:
+            run_eval(0)  # the base model's score, on the same prompts as every later eval
         for step in range(1, tc.steps + 1):
+            if device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(device)
             # ---- 1. rollouts ------------------------------------------------------------
             t0 = time.perf_counter()
             prompts = task.sample_prompts(tc.prompts_per_step, rng)
-            batch = generate_group_rollouts(
-                model,
-                [p.input_ids for p in prompts],
-                group_size=group,
-                max_new_tokens=algo.max_new_tokens,
-                temperature=algo.temperature,
-                pad_id=task.pad_id,
-                eos_ids=task.eos_ids,
-            )
+            with autocast(device, amp):
+                batch = generate_group_rollouts(
+                    model,
+                    [p.input_ids for p in prompts],
+                    group_size=group,
+                    max_new_tokens=algo.max_new_tokens,
+                    temperature=algo.temperature,
+                    pad_id=task.pad_id,
+                    eos_ids=task.eos_ids,
+                )
             t_gen = time.perf_counter() - t0
 
             # ---- 2. rewards and advantages ----------------------------------------------
@@ -158,12 +192,12 @@ def train(cfg: Config) -> TrainResult:
             # With a single pass, old log-probs equal the current ones (ratio == 1), so reuse
             # them instead of paying for an extra forward pass.
             old_lp = (
-                _batched_logprobs(model, batch, tc.micro_batch_size, algo.temperature)
+                _batched_logprobs(model, batch, tc.micro_batch_size, algo.temperature, amp)
                 if algo.num_iterations > 1
                 else None
             )
             ref_lp = (
-                _batched_logprobs(ref_model, batch, tc.micro_batch_size, algo.temperature)
+                _batched_logprobs(ref_model, batch, tc.micro_batch_size, algo.temperature, amp)
                 if ref_model is not None
                 else None
             )
@@ -174,14 +208,15 @@ def train(cfg: Config) -> TrainResult:
             for _ in range(algo.num_iterations):
                 optimizer.zero_grad(set_to_none=True)
                 for mb in _micro_batches(n_seq, tc.micro_batch_size):
-                    lp, ent = completion_logprobs(
-                        model,
-                        batch.input_ids[mb],
-                        batch.attention_mask[mb],
-                        batch.prompt_len,
-                        algo.temperature,
-                        return_entropy=True,
-                    )
+                    with autocast(device, amp):
+                        lp, ent = completion_logprobs(
+                            model,
+                            batch.input_ids[mb],
+                            batch.attention_mask[mb],
+                            batch.prompt_len,
+                            algo.temperature,
+                            return_entropy=True,
+                        )
                     out = grpo_loss(
                         lp,
                         old_lp[mb] if old_lp is not None else lp.detach(),
@@ -237,6 +272,8 @@ def train(cfg: Config) -> TrainResult:
                 metrics["gold/accuracy"] = float(np.mean(components[task.gold_component]))
             if "kl" in sums:
                 metrics["kl"] = sums["kl"] / denom
+            if device.type == "cuda":
+                metrics["memory/peak_gb"] = torch.cuda.max_memory_allocated(device) / 1e9
             store.log_metrics(run_id, step, metrics)
             result.history.append(metrics)
 
@@ -263,6 +300,14 @@ def train(cfg: Config) -> TrainResult:
                     f"| zero-adv {metrics['adv/zero_group_frac']:.2f} "
                     f"| gen {t_gen:.1f}s train {t_train:.1f}s"
                 )
+            if eval_prompts and (step % ec.every == 0 or step == tc.steps):
+                run_eval(step)
+        if cfg.log.save_final:
+            out = Path(cfg.log.checkpoint_dir) / run_id
+            model.save_pretrained(out)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(out)
+            print(f"saved final policy to {out}")
     except BaseException:
         store.finish_run(run_id, status="failed")
         raise

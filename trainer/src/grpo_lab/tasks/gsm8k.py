@@ -1,4 +1,4 @@
-"""GSM8K with a binary correctness reward plus a small format reward."""
+"""GSM8K with a binary correctness reward plus a small format reward (answer in \\boxed{})."""
 
 from __future__ import annotations
 
@@ -10,10 +10,9 @@ from transformers import PreTrainedTokenizerBase
 from grpo_lab.rewards.math import gold_answer, has_final_answer_format, is_correct
 from grpo_lab.tasks.base import Prompt, Task
 
-SYSTEM_PROMPT = (
-    "Solve the math problem step by step. "
-    "On the final line, write the answer as '#### <number>' and nothing else."
-)
+# Qwen's own math prompt. Keeping the model in its trained output style matters at 0.5B:
+# see grpo_lab.rewards.math for the numbers.
+SYSTEM_PROMPT = "Please reason step by step, and put your final answer within \\boxed{}."
 
 
 class GSM8KTask(Task):
@@ -54,12 +53,22 @@ class GSM8KTask(Task):
         )
         return self.tokenizer(text, add_special_tokens=False)["input_ids"], question
 
+    def _prompt(self, ex: dict) -> Prompt:
+        ids, text = self._encode(ex["question"])
+        return Prompt(id=ex["id"], input_ids=ids, text=text, meta={"gold": ex["gold"]})
+
     def sample_prompts(self, n: int, rng: random.Random) -> list[Prompt]:
-        prompts = []
-        for ex in rng.sample(self.examples, k=min(n, len(self.examples))):
-            ids, text = self._encode(ex["question"])
-            prompts.append(Prompt(id=ex["id"], input_ids=ids, text=text, meta={"gold": ex["gold"]}))
-        return prompts
+        return [self._prompt(ex) for ex in rng.sample(self.examples, k=min(n, len(self.examples)))]
+
+    def eval_prompts(self, n: int) -> list[Prompt]:
+        """The first ``n`` problems of the GSM8K test split (1319 total)."""
+        ds = load_dataset("openai/gsm8k", "main", split="test")
+        ds = ds.select(range(min(n, len(ds))))
+        examples = [
+            {"id": f"test-{i}", "question": ex["question"], "gold": gold_answer(ex["answer"])}
+            for i, ex in enumerate(ds)
+        ]
+        return [self._prompt(ex) for ex in examples]
 
     def score(self, prompts: list[Prompt], completions: list[list[int]]) -> dict[str, list[float]]:
         texts = [self.decode(c) for c in completions]

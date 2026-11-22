@@ -35,6 +35,10 @@ class Task(ABC):
     @abstractmethod
     def decode(self, token_ids: list[int]) -> str: ...
 
+    def eval_prompts(self, n: int) -> list[Prompt]:
+        """A fixed held-out set: the same ``n`` prompts on every call, disjoint from training."""
+        raise NotImplementedError(f"{type(self).__name__} has no held-out eval set")
+
     def total_reward(self, components: dict[str, list[float]]) -> list[float]:
         n = len(next(iter(components.values())))
         return [

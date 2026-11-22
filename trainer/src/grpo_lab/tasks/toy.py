@@ -31,6 +31,9 @@ class ToyTargetTask(Task):
             prompts.append(Prompt(id="-".join(map(str, ids)), input_ids=ids, text=self.decode(ids)))
         return prompts
 
+    def eval_prompts(self, n: int) -> list[Prompt]:
+        return self.sample_prompts(n, random.Random(12345))  # fixed seed: same set every call
+
     def score(self, prompts: list[Prompt], completions: list[list[int]]) -> dict[str, list[float]]:
         return {
             "target_frac": [

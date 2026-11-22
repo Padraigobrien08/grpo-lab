@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import torch
 from transformers import (
     AutoModelForCausalLM,
@@ -27,6 +29,13 @@ def resolve_device(name: str) -> torch.device:
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+def autocast(device: torch.device, amp_dtype: str | None) -> contextlib.AbstractContextManager:
+    """Mixed-precision forward passes; a no-op when ``amp_dtype`` is None."""
+    if amp_dtype is None:
+        return contextlib.nullcontext()
+    return torch.autocast(device_type=device.type, dtype=_DTYPES[amp_dtype])
 
 
 def load_policy(
