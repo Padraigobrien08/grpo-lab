@@ -46,12 +46,10 @@ Use the pod's **"SSH over exposed TCP"** command (`ssh root@<ip> -p <port>`), no
 `ssh.runpod.io` proxy: the proxy doesn't support rsync or scp.
 
 ```bash
-# 0. on the pod, once: rsync must exist on both ends
-ssh root@<ip> -p <port> 'apt-get update -qq && apt-get install -y -qq rsync'
-# 1. copy the code into the persistent volume (from your machine)
-rsync -az -e 'ssh -p <port>' --exclude .venv --exclude 'web/node_modules' --exclude 'web/.next' \
-  --exclude runs --exclude checkpoints ./ root@<ip>:/workspace/grpo-lab/
-# 2. on the pod: tmux, uv, caches on /workspace, CUDA check, model + data download, tests
+# 1. on the pod: clone into the persistent volume. A clone (not a file copy) means every run
+#    records the exact commit it ran (runs.git_sha). Commit and push before launching.
+cd /workspace && git clone https://github.com/Padraigobrien08/grpo-lab.git  # add -b <branch>
+# 2. on the pod: tmux, rsync, uv, caches on /workspace, CUDA check, model + data, tests
 cd /workspace/grpo-lab && bash scripts/gpu_setup.sh && source ~/.bashrc
 # 3. pilot (20 steps): check memory/peak_gb, time per step, adv/zero_group_frac
 tmux new -s pilot 'uv run train --config trainer/configs/gsm8k_grpo.yaml \
