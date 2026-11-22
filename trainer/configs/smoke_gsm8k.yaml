@@ -1,0 +1,25 @@
+# Local end-to-end smoke test on a real model (M-series Mac / MPS). Checks plumbing, not learning.
+# Downloads Qwen2.5-0.5B-Instruct (~1 GB) and GSM8K on first run.
+name: smoke-gsm8k
+seed: 0
+device: auto
+model:
+  name_or_path: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: float32
+task:
+  name: gsm8k
+  params: {split: train, max_examples: 64}
+algo:
+  group_size: 4
+  beta: 0.04
+  max_new_tokens: 192
+train:
+  steps: 3
+  prompts_per_step: 2
+  micro_batch_size: 4
+  lr: 1.0e-6
+  # Adam's first step moves every weight by ~lr regardless of gradient size; on a tiny noisy
+  # batch that alone shifts token log-probs by ~0.09 nats and collapses the policy. Warm up.
+  warmup_steps: 10
+log:
+  rollout_every: 1

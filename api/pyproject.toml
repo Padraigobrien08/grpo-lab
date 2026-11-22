@@ -1,0 +1,14 @@
+[project]
+name = "grpo-api"
+version = "0.1.0"
+description = "Read-only FastAPI service over the grpo-lab run store."
+requires-python = ">=3.12"
+# Deliberately no torch: the API only depends on the run store, so it deploys small.
+dependencies = ["runstore", "fastapi>=0.115", "uvicorn>=0.30"]
+
+[tool.uv.sources]
+runstore = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"

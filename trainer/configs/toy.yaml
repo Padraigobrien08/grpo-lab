@@ -1,0 +1,21 @@
+# Sanity check: a tiny random Qwen2 learns to emit token 3. Runs on CPU in seconds, no downloads.
+name: toy-target
+seed: 0
+device: cpu
+model:
+  toy: {vocab_size: 16, hidden_size: 64, num_layers: 2, num_heads: 4}
+task:
+  name: toy_target
+  params: {prompt_len: 4, target_token: 3}
+algo:
+  group_size: 8
+  beta: 0.04
+  max_new_tokens: 8
+train:
+  steps: 40
+  prompts_per_step: 8
+  micro_batch_size: 32
+  lr: 3.0e-3
+log:
+  rollout_every: 10
+  print_every: 5

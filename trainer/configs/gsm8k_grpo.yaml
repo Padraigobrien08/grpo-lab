@@ -1,0 +1,28 @@
+# MVP run (M2) on a single rented GPU. Hyperparameters are a starting point to tune, not final.
+name: gsm8k-grpo
+seed: 0
+device: cuda
+model:
+  name_or_path: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: bfloat16
+  gradient_checkpointing: true
+task:
+  name: gsm8k
+  params: {split: train}
+algo:
+  group_size: 8
+  beta: 0.04
+  clip_eps_low: 0.2
+  clip_eps_high: 0.2
+  loss_aggregation: sequence_mean
+  advantage_scale: std
+  temperature: 1.0
+  max_new_tokens: 512
+train:
+  steps: 300
+  prompts_per_step: 16
+  micro_batch_size: 16
+  lr: 1.0e-6
+  warmup_steps: 10
+log:
+  rollout_every: 10

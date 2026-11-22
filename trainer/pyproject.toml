@@ -1,0 +1,23 @@
+[project]
+name = "grpo-lab"
+version = "0.1.0"
+description = "From-scratch GRPO-style RL post-training for small language models."
+requires-python = ">=3.12"
+dependencies = [
+    "runstore",
+    "torch>=2.5",
+    "transformers>=4.50",
+    "datasets>=3.0",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+train = "grpo_lab.train:main"
+
+[tool.uv.sources]
+runstore = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
