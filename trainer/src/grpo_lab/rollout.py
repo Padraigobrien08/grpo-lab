@@ -69,8 +69,12 @@ def generate_group_rollouts(
     temperature: float,
     pad_id: int,
     eos_ids: Sequence[int],
+    greedy: bool = False,
 ) -> RolloutBatch:
-    """Sample ``group_size`` completions per prompt; rows are grouped contiguously."""
+    """Sample ``group_size`` completions per prompt; rows are grouped contiguously.
+
+    ``greedy=True`` decodes deterministically instead (held-out eval; use ``group_size=1``).
+    """
     device = next(model.parameters()).device
     repeated = [p for p in prompt_ids for _ in range(group_size)]
     ids, mask = left_pad(repeated, pad_id, device)
@@ -81,13 +85,15 @@ def generate_group_rollouts(
     # Pass every sampling knob explicitly. Instruct checkpoints ship generation_config defaults
     # (top_k, top_p, repetition_penalty) that would make the sampling distribution differ from
     # the policy we compute log-probs for, and the on-policy assumption would break silently.
+    sampling = (
+        dict(do_sample=False, temperature=None, top_k=None, top_p=None)
+        if greedy
+        else dict(do_sample=True, temperature=temperature, top_k=0, top_p=1.0)
+    )
     out = model.generate(
         input_ids=ids,
         attention_mask=mask,
-        do_sample=True,
-        temperature=temperature,
-        top_k=0,
-        top_p=1.0,
+        **sampling,
         min_p=None,
         repetition_penalty=1.0,
         max_new_tokens=max_new_tokens,

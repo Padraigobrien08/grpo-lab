@@ -43,3 +43,26 @@ def test_toy_reward_improves(tmp_path, overrides):
     assert store.rollout_steps(result.run_id) == [1, 10, 20, 30]
     rows = store.read_rollouts(result.run_id, 30)
     assert len(rows) == cfg.train.prompts_per_step * cfg.algo.group_size
+
+
+@pytest.mark.smoke
+def test_toy_eval_and_autocast(tmp_path):
+    """Held-out greedy eval runs before/during/after training and improves; bf16 autocast learns."""
+    cfg = load_config(
+        CONFIG,
+        [
+            f"log.store_dir={tmp_path}",
+            "train.steps=30",
+            "model.amp_dtype=bfloat16",
+            "eval.every=10",
+            "eval.num_examples=16",
+            "eval.batch_size=8",
+        ],
+    )
+    result = train(cfg)
+
+    evals = result.eval_history
+    assert [e["step"] for e in evals] == [0, 10, 20, 30]
+    assert evals[-1]["eval/accuracy"] > evals[0]["eval/accuracy"] + 0.5, evals
+    metrics = RunStore(tmp_path).get_metrics(result.run_id)
+    assert [s for s, _ in metrics["eval/accuracy"]] == [0, 10, 20, 30]

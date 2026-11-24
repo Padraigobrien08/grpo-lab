@@ -26,13 +26,27 @@ class ToyModelConfig(_Strict):
 class ModelConfig(_Strict):
     name_or_path: str | None = None  # Hugging Face id or local path
     toy: ToyModelConfig | None = None  # tiny random Qwen2: no download, for tests and smoke runs
-    dtype: Literal["float32", "bfloat16", "float16"] = "float32"
+    dtype: Literal["float32", "bfloat16", "float16"] = "float32"  # weights + optimizer state
+    # Compute dtype for forward passes (torch.autocast); weights stay in ``dtype``. bf16 only:
+    # fp16 would also need loss scaling.
+    amp_dtype: Literal["bfloat16"] | None = None
     gradient_checkpointing: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> ModelConfig:
         if (self.name_or_path is None) == (self.toy is None):
             raise ValueError("set exactly one of model.name_or_path or model.toy")
+        return self
+
+    @model_validator(mode="after")
+    def _trainable_weights_in_fp32(self) -> ModelConfig:
+        # Full fine-tuning updates are ~lr (1e-6) per step; bf16 can't represent changes below
+        # ~1e-4 of a typical weight, so Adam steps silently round to zero and nothing learns.
+        if self.dtype != "float32":
+            raise ValueError(
+                f"model.dtype={self.dtype} would lose small optimizer updates to rounding; "
+                "keep model.dtype=float32 and set model.amp_dtype=bfloat16 for speed"
+            )
         return self
 
 
@@ -64,10 +78,20 @@ class TrainConfig(_Strict):
     warmup_steps: int = 0
 
 
+class EvalConfig(_Strict):
+    # Greedy held-out eval every N steps, plus before step 1 and after the last. 0 = off.
+    every: int = 0
+    num_examples: int = 500  # fixed held-out subset, the same at every eval
+    batch_size: int = 64
+    max_new_tokens: int | None = None  # None = algo.max_new_tokens
+
+
 class LogConfig(_Strict):
     store_dir: str = "runs"
     rollout_every: int = 10  # also always logged on the first and last step
     print_every: int = 1
+    save_final: bool = False  # save the final policy (HF format) to checkpoint_dir/<run_id>
+    checkpoint_dir: str = "checkpoints"
 
 
 class Config(_Strict):
@@ -78,6 +102,7 @@ class Config(_Strict):
     task: TaskConfig
     algo: AlgoConfig = AlgoConfig()
     train: TrainConfig = TrainConfig()
+    eval: EvalConfig = EvalConfig()
     log: LogConfig = LogConfig()
 
 
