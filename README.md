@@ -54,12 +54,16 @@ cd /workspace && git clone https://github.com/Padraigobrien08/grpo-lab.git  # ad
 # 2. on the pod: tmux, rsync, uv, caches on /workspace, CUDA check, model + data, tests
 cd /workspace/grpo-lab && bash scripts/gpu_setup.sh && source ~/.bashrc
 # 3. pilot (20 steps): check memory/peak_gb, time per step, adv/zero_group_frac
-tmux new -s pilot 'uv run train --config trainer/configs/gsm8k_grpo.yaml \
+#    PYTHONUNBUFFERED=1: piped into tee, Python block-buffers stdout and the log looks frozen.
+tmux new -s pilot 'PYTHONUNBUFFERED=1 uv run train --config trainer/configs/gsm8k_grpo.yaml \
   --override train.steps=20 --override eval.every=20 --override name=gsm8k-pilot 2>&1 | tee pilot.log'
-# 4. full run (~3-5 h). Stops the pod when training ends, crash or not, so an overnight run
-#    doesn't bill idle GPU hours. Detach with Ctrl-b d; reattach with: tmux attach -t train
-tmux new -s train 'uv run train --config trainer/configs/gsm8k_grpo.yaml 2>&1 | tee train.log; \
-  runpodctl stop pod $RUNPOD_POD_ID'
+# 4. full run (~2.5 h on an A40). Stops the pod when training ends, crash or not, so an overnight
+#    run doesn't bill idle GPU hours. Detach with Ctrl-b d; reattach with: tmux attach -t train
+#    RUNPOD_POD_ID/RUNPOD_API_KEY live in /etc/rp_environment, which non-interactive shells skip.
+#    Unverified: on the 2026-11-24 pod, `runpodctl get pod` answered Unauthorized with that key,
+#    so check the pod actually stopped (console or `runpodctl get pod` locally) after the run.
+tmux new -s train 'source /etc/rp_environment; PYTHONUNBUFFERED=1 uv run train \
+  --config trainer/configs/gsm8k_grpo.yaml 2>&1 | tee train.log; runpodctl stop pod $RUNPOD_POD_ID'
 # 5. pull results back (from your machine). Replaces your local runs/store.sqlite.
 rsync -az -e 'ssh -p <port>' root@<ip>:/workspace/grpo-lab/runs/ runs/
 ```
