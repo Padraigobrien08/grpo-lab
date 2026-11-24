@@ -38,7 +38,9 @@ checkpoints yet. Estimated peak memory is ~20–25 GB (the pilot measures it), a
 under HF `generate` is limited by per-token latency, not FLOPs, so an A100/H100 costs 2–4x more
 for little speedup. A 24 GB card (RTX 4090, L4) is the cheapest option if you add
 `--override train.micro_batch_size=4`. Any recent "RunPod PyTorch" template works (uv installs
-its own torch; the template only needs to supply the NVIDIA driver). Container disk 20 GB, **volume disk 50 GB at `/workspace`**
+its own torch; the template only needs to supply the NVIDIA driver). **Filter hosts by CUDA
+version ≥ 13.0** when deploying: `uv.lock` pins a CUDA 13 torch build, which needs driver ≥ 580,
+and on older hosts `torch.cuda.is_available()` is False (`gpu_setup.sh` fails fast if so). Container disk 20 GB, **volume disk 50 GB at `/workspace`**
 (the only path that survives a pod stop), and tick **SSH terminal access** / expose TCP port 22.
 Add your SSH public key under RunPod account settings first.
 
