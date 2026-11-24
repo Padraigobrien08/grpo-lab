@@ -60,8 +60,8 @@ tmux new -s pilot 'PYTHONUNBUFFERED=1 uv run train --config trainer/configs/gsm8
 # 4. full run (~2.5 h on an A40). Stops the pod when training ends, crash or not, so an overnight
 #    run doesn't bill idle GPU hours. Detach with Ctrl-b d; reattach with: tmux attach -t train
 #    RUNPOD_POD_ID/RUNPOD_API_KEY live in /etc/rp_environment, which non-interactive shells skip.
-#    Unverified: on the 2026-11-24 pod, `runpodctl get pod` answered Unauthorized with that key,
-#    so check the pod actually stopped (console or `runpodctl get pod` locally) after the run.
+#    Verified on 2026-11-24: the stop worked with the pod's own key (train.log ends with
+#    `pod "<id>" stopped`), even though `runpodctl get pod` answered Unauthorized with it.
 tmux new -s train 'source /etc/rp_environment; PYTHONUNBUFFERED=1 uv run train \
   --config trainer/configs/gsm8k_grpo.yaml 2>&1 | tee train.log; runpodctl stop pod $RUNPOD_POD_ID'
 # 5. pull results back (from your machine). Replaces your local runs/store.sqlite.
