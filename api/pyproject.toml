@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 # Deliberately no torch: the API only depends on the run store, so it deploys small.
 dependencies = ["runstore", "fastapi>=0.115", "uvicorn>=0.30"]
 
+# export-static uses TestClient, which needs httpx from the workspace dev group (uv sync installs it).
+[project.scripts]
+export-static = "grpo_api.export:main"
+
 [tool.uv.sources]
 runstore = { workspace = true }
 

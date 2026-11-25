@@ -14,7 +14,7 @@ looking inside training. See [SPEC.md](SPEC.md) for the research questions, scop
 | `runstore/` | On-disk run store (SQLite + Parquet): the only contract between trainer and API |
 | `trainer/` | `grpo_lab`: rollouts, rewards, advantages, loss, training loop (PyTorch) |
 | `api/` | Read-only FastAPI over the run store (no torch dependency) |
-| `web/` | Next.js + shadcn/ui dashboard (placeholder until M4) |
+| `web/` | Next.js + shadcn/ui dashboard: runs, metric curves, rollout inspector (static site) |
 
 ## Quickstart
 
@@ -24,7 +24,7 @@ uv run pytest                                              # 62 tests incl. 3 en
 uv run train --config trainer/configs/toy.yaml             # tiny random model learns a target token (CPU, seconds)
 uv run train --config trainer/configs/smoke_gsm8k.yaml     # Qwen2.5-0.5B on GSM8K, 3 steps (MPS/CUDA, ~1 GB download)
 GRPO_STORE=runs uv run uvicorn grpo_api.main:app --reload  # API on :8000
-cd web && pnpm dev                                         # dashboard on :3000
+uv run export-static && cd web && pnpm dev                 # dashboard on :3000 (see Dashboard)
 ```
 
 Override any config value from the CLI, e.g. for ablations:
@@ -109,6 +109,36 @@ uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c>
   included) and `summary.json`.
 - Cost: greedy takes ~2 min per model on an A40 and ~15 min on an M-series Mac. pass@16 is
   ~21k completions per model (~30 min on an A40), so run it on the GPU.
+
+## Dashboard (M4)
+
+Three views over the run store: **Runs** (final metrics and the config keys that differ between
+runs), **Run detail** (metric curves with EMA smoothing; click a chart to open the rollouts logged
+nearest that step) and the **Rollout inspector** (pick a logged step and a prompt to see all G
+samples with their rewards, advantages, lengths and boxed answers).
+
+It's a static Next.js site (`output: "export"`) that fetches JSON in the browser, from one of two
+sources behind the same paths:
+
+```bash
+# A snapshot: every API response written to web/public/data/<path>.json (gitignored).
+uv run export-static                  # reads runs/ (or $GRPO_STORE)
+cd web && pnpm dev                    # http://localhost:3000
+# Or the live API, e.g. while a run is training:
+uv run uvicorn grpo_api.main:app --port 8000
+cd web && NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev
+```
+
+`pnpm build` writes the deployable site to `web/out/`, including the snapshot; it needs no server
+and no GPU. Re-run `export-static` before building to include new runs.
+
+- Pages take the run as a query param (`/run?id=…`, `/rollouts?id=…&step=…&prompt=…`), not a
+  `[id]` route: a static export needs every dynamic route known at build time, which would tie
+  the pages to one snapshot.
+- Runs trained on different machines end up in different stores. Fold one into another with
+  `uv run runstore merge <src> <dst>` (it refuses run-id clashes and writes nothing if it does).
+- Not yet: per-token heatmaps (the trainer doesn't log token traces) and following one prompt
+  across steps (training prompts don't repeat between logged steps).
 
 ## What the tests pin down
 
