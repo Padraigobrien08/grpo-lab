@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 train = "grpo_lab.train:main"
+evaluate = "grpo_lab.evaluate:main"
 
 [tool.uv.sources]
 runstore = { workspace = true }

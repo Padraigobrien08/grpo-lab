@@ -85,6 +85,29 @@ Watch the `eval @ step` lines: greedy accuracy on a fixed 500-problem GSM8K test
 before step 1 (the base model) and every 25 steps. That, not training reward, is the M2 signal.
 The final policy is saved to `checkpoints/<run_id>/` for M3's eval.
 
+## Evaluating (M3)
+
+`uv run evaluate` scores a model on all 1319 GSM8K test problems and compares models with 95% CIs.
+It uses the training config for prompts, stop tokens, max length, temperature and autocast, so a
+model is scored the same way it was trained.
+
+```bash
+uv run evaluate run --model Qwen/Qwen2.5-0.5B-Instruct --label base   # greedy + pass@1/4/8/16
+uv run evaluate run --model checkpoints/<run_id>                        # one per training seed
+uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c>
+```
+
+- **Greedy accuracy** is the headline. **pass@k** uses the unbiased estimator over `--samples`
+  draws at the training temperature (default 16; `--samples 0` for greedy only).
+- **Score the final checkpoint**, not the step with the best eval curve: that curve is on the
+  test set, so picking a step by it inflates the result.
+- **`compare`** pairs base and trained on the same problems (paired CI, exact McNemar test), and
+  with two or more trained runs adds mean ± Student-t 95% CI across seeds.
+- Output goes to `evals/<label>/`: `problems.parquet` (one row per problem, greedy text
+  included) and `summary.json`.
+- Cost: greedy takes ~2 min per model on an A40 and ~15 min on an M-series Mac. pass@16 is
+  ~21k completions per model (~30 min on an A40), so run it on the GPU.
+
 ## What the tests pin down
 
 - **Loss:** on-policy gradient = −advantage; all four clipping cases; DAPO clip-higher;
