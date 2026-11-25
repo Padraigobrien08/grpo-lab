@@ -20,6 +20,9 @@
 # production
 /build
 
+# run-store snapshot written by `uv run export-static` (regenerate, don't commit)
+/public/data/
+
 # misc
 .DS_Store
 *.pem

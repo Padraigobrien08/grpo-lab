@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import sqlite3
 import time
 import uuid
@@ -193,6 +194,17 @@ class RunStore:
             out.setdefault(key, []).append((step, value))
         return out
 
+    def last_metrics(self, run_id: str) -> dict[str, tuple[int, float]]:
+        """The latest (step, value) of every metric key: a run's "final" numbers."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT key, step, value FROM metrics m WHERE run_id = ? AND step = "
+                "(SELECT MAX(step) FROM metrics WHERE run_id = m.run_id AND key = m.key) "
+                "ORDER BY key",
+                (run_id,),
+            ).fetchall()
+        return {key: (step, value) for key, step, value in rows}
+
     def rollout_steps(self, run_id: str) -> list[int]:
         run_dir = self.root / "rollouts" / run_id
         if not run_dir.is_dir():
@@ -204,6 +216,51 @@ class RunStore:
         if not path.exists():
             return []
         return pq.read_table(path).to_pylist()
+
+
+def merge_store(src: str | Path, dst: str | Path) -> list[str]:
+    """Copy every run (row, metrics, rollouts) from the store at ``src`` into ``dst``.
+
+    For stores written on different machines, e.g. runs trained on separate GPU pods. Refuses,
+    before writing anything, if a run id already exists in ``dst``. Returns the merged run ids.
+    """
+    src_root, dst_store = Path(src), RunStore(dst)
+    src_db = src_root / "store.sqlite"
+    if not src_db.exists():
+        raise FileNotFoundError(f"no run store at {src_root}")
+    if src_root.resolve() == dst_store.root.resolve():
+        raise ValueError("source and destination are the same store")
+
+    with dst_store._connect() as conn:
+        conn.execute("ATTACH DATABASE ? AS src", (str(src_db),))
+        version = conn.execute("SELECT value FROM src.meta WHERE key = 'schema_version'").fetchone()
+        if version is None or int(version[0]) != SCHEMA_VERSION:
+            raise ValueError(f"source schema version {version} != {SCHEMA_VERSION}")
+        run_ids = [r[0] for r in conn.execute("SELECT id FROM src.runs ORDER BY started_at")]
+        clashes = [
+            rid
+            for rid in run_ids
+            if conn.execute("SELECT 1 FROM runs WHERE id = ?", (rid,)).fetchone()
+            or (dst_store.root / "rollouts" / rid).exists()
+        ]
+        if clashes:
+            raise ValueError(f"runs already in destination: {clashes}")
+        # Files first: if a copy fails, the transaction below never runs and the DB is unchanged.
+        copied: list[Path] = []
+        try:
+            for rid in run_ids:
+                src_dir = src_root / "rollouts" / rid
+                if src_dir.is_dir():
+                    copied.append(dst_store.root / "rollouts" / rid)
+                    shutil.copytree(src_dir, copied[-1])
+            conn.execute("INSERT INTO runs SELECT * FROM src.runs")
+            conn.execute("INSERT INTO metrics SELECT * FROM src.metrics")
+        except BaseException:
+            conn.rollback()
+            for path in copied:
+                shutil.rmtree(path, ignore_errors=True)
+            raise
+    return run_ids
 
 
 def _run_from_row(row: tuple[Any, ...]) -> RunInfo:

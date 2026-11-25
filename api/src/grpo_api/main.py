@@ -32,7 +32,19 @@ def create_app(store_dir: str | None = None) -> FastAPI:
 
     @app.get("/runs")
     def list_runs() -> list[dict[str, Any]]:
-        return [asdict(r) for r in store.list_runs()]
+        # Summaries ride along so the runs table needs one request, not one per run.
+        out = []
+        for run in store.list_runs():
+            last = store.last_metrics(run.id)
+            out.append(
+                {
+                    **asdict(run),
+                    "last_step": max((step for step, _ in last.values()), default=None),
+                    "last_metrics": {key: value for key, (_, value) in last.items()},
+                    "rollout_steps": len(store.rollout_steps(run.id)),
+                }
+            )
+        return out
 
     @app.get("/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
