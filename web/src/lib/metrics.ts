@@ -11,33 +11,42 @@ export function ema(values: number[], weight: number): number[] {
   });
 }
 
-export type MetricGroup = { title: string; description: string; keys: string[] };
+export type MetricGroup = {
+  title: string;
+  description: string;
+  keys: string[];
+  /** The charts that tell the story of a run; shown first and larger. */
+  primary?: boolean;
+};
 
 // Charts on the run page, in order. Keys a run doesn't have are skipped; unknown keys go to
 // "Other", so a new metric shows up without a code change.
 export const METRIC_GROUPS: MetricGroup[] = [
   {
+    title: "Eval accuracy",
+    primary: true,
+    description: "Greedy accuracy on the fixed 500-problem test subset",
+    keys: ["eval/accuracy"],
+  },
+  {
     title: "Reward",
+    primary: true,
     description: "Mean training reward, and the share of samples answered correctly",
     keys: ["reward/mean", "reward/correct"],
   },
+  { title: "KL to reference", description: "k3 estimator, per token", keys: ["kl"], primary: true },
   {
-    title: "Eval accuracy",
-    description: "Greedy accuracy on the fixed 500-problem test subset",
-    keys: ["eval/accuracy"],
+    title: "Zero-advantage groups",
+    primary: true,
+    description: "Groups where all samples got the same reward (no learning signal)",
+    keys: ["adv/zero_group_frac"],
   },
   {
     title: "Boxed answers",
     description: "Share of completions with a \\boxed{} answer: training samples vs greedy eval",
     keys: ["reward/format", "eval/format"],
   },
-  { title: "KL to reference", description: "k3 estimator, per token", keys: ["kl"] },
   { title: "Entropy", description: "Policy entropy, per token", keys: ["entropy"] },
-  {
-    title: "Zero-advantage groups",
-    description: "Groups where all samples got the same reward (no learning signal)",
-    keys: ["adv/zero_group_frac"],
-  },
   {
     title: "Completion length",
     description: "Tokens per completion",
@@ -65,6 +74,8 @@ export const METRIC_GROUPS: MetricGroup[] = [
 ];
 
 export function groupMetrics(keys: string[]): MetricGroup[] {
+  // Story order for the primary charts: did it learn (eval), what it optimised (reward),
+  // how far it moved (KL), and whether groups still carry signal (zero-advantage).
   const present = new Set(keys);
   const used = new Set<string>();
   const groups = METRIC_GROUPS.map((g) => {

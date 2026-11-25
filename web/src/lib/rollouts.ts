@@ -45,25 +45,3 @@ export function groupRollouts(rows: RolloutRow[]): Group[] {
     })
     .sort((a, b) => a.groupIdx - b.groupIdx);
 }
-
-/** Split text around \boxed{...} (braces balanced) so the final answer can be highlighted. */
-export function splitBoxed(text: string): { text: string; boxed: boolean }[] {
-  const parts: { text: string; boxed: boolean }[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const start = text.indexOf("\\boxed{", i);
-    if (start < 0) break;
-    let depth = 0;
-    let end = start + "\\boxed".length;
-    for (; end < text.length; end++) {
-      if (text[end] === "{") depth++;
-      else if (text[end] === "}" && --depth === 0) break;
-    }
-    if (depth !== 0) break; // unbalanced (e.g. truncated mid-answer): leave as plain text
-    parts.push({ text: text.slice(i, start), boxed: false });
-    parts.push({ text: text.slice(start, end + 1), boxed: true });
-    i = end + 1;
-  }
-  parts.push({ text: text.slice(i), boxed: false });
-  return parts.filter((p) => p.text.length > 0);
-}

@@ -24,10 +24,22 @@ type Props = {
   keys: string[];
   metrics: Metrics;
   smoothing: number;
+  /** Tailwind height class: primary charts are taller than diagnostics. */
+  height: string;
+  nearestRollout: (step: number) => number | null;
   onPickStep: (step: number) => void;
 };
 
-export function MetricChart({ title, description, keys, metrics, smoothing, onPickStep }: Props) {
+export function MetricChart({
+  title,
+  description,
+  keys,
+  metrics,
+  smoothing,
+  height,
+  nearestRollout,
+  onPickStep,
+}: Props) {
   // Metric keys contain "/", which can't appear in the CSS variables the chart uses for color.
   const series = keys.map((key, i) => ({ key, id: `s${i}`, points: metrics[key] ?? [] }));
   const config: ChartConfig = Object.fromEntries(
@@ -64,7 +76,7 @@ export function MetricChart({ title, description, keys, metrics, smoothing, onPi
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={config} className="aspect-auto h-56 w-full">
+        <ChartContainer config={config} className={`aspect-auto w-full ${height}`}>
           <LineChart
             data={data}
             margin={{ left: 4, right: 12, top: 4 }}
@@ -93,7 +105,20 @@ export function MetricChart({ title, description, keys, metrics, smoothing, onPi
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(_, payload) => `step ${payload?.[0]?.payload?.step ?? ""}`}
+                  labelFormatter={(_, payload) => {
+                    const step = payload?.[0]?.payload?.step as number | undefined;
+                    const r = step === undefined ? null : nearestRollout(step);
+                    return (
+                      <span className="flex flex-col">
+                        <span>step {step}</span>
+                        {r !== null && (
+                          <span className="font-normal text-muted-foreground">
+                            click: rollouts at step {r}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  }}
                   formatter={(value, name) => (
                     <div className="flex w-full justify-between gap-4">
                       <span className="text-muted-foreground">{config[String(name)]?.label}</span>
