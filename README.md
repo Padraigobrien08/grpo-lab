@@ -3,7 +3,9 @@
 From-scratch GRPO-style RL post-training for small language models, plus a dashboard for
 looking inside training. See [SPEC.md](SPEC.md) for the research questions, scope and milestones.
 
-**Status:** M0 (scaffold) + M1 (algorithm core) done; M2 (first real GSM8K run) in progress.
+**Status:** M0 (scaffold), M1 (algorithm core), M2 (first real GSM8K run) and M3 (eval harness;
+3-seed result: GRPO +6.0 pts greedy GSM8K accuracy over base, 95% CI [+4.7, +7.3]) done; M4
+(dashboard v1) next.
 
 ## Layout
 
