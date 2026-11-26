@@ -152,7 +152,9 @@ and no GPU. Re-run `export-static` before building to include new runs.
 **Deploying:** `bash scripts/deploy_dashboard.sh` snapshots, builds and uploads `web/out/` to Vercel
 (`--preview` for a preview URL). It deploys the prebuilt directory, not from git, because the
 snapshot comes from your local `runs/`, which isn't committed. Run `npx vercel@65.14.0 login` once
-first.
+first. The root `vercel.json` turns off git-triggered deploys: the Vercel project is connected to
+this repo, and a git build would auto-detect the FastAPI app and replace the dashboard with an
+API that has no runs.
 
 - Pages take the run as a query param (`/run?id=…`, `/rollouts?id=…&step=…&prompt=…`), not a
   `[id]` route: a static export needs every dynamic route known at build time, which would tie
