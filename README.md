@@ -3,9 +3,24 @@
 From-scratch GRPO-style RL post-training for small language models, plus a dashboard for
 looking inside training. See [SPEC.md](SPEC.md) for the research questions, scope and milestones.
 
-**Status:** M0 (scaffold), M1 (algorithm core), M2 (first real GSM8K run) and M3 (eval harness;
-3-seed result: GRPO +6.0 pts greedy GSM8K accuracy over base, 95% CI [+4.7, +7.3]) done; M4
-(dashboard v1) next.
+**Status:** MVP done (M0–M4: scaffold, algorithm core, first GSM8K run, eval harness, dashboard).
+Next: M5 (parity with TRL's `GRPOTrainer`) and the RQ1 ablations; see [SPEC.md](SPEC.md) §6.
+
+## Result
+
+![GRPO vs base on GSM8K](report/gsm8k-3seed.png)
+
+GRPO on Qwen2.5-0.5B-Instruct (300 steps, G=8, β=0.04, one A40, ~2 h per seed) raises greedy accuracy on
+all 1319 GSM8K test problems from **47.6% to 53.6%**: **+6.0 pts, 95% CI [+4.7, +7.3]** across 3
+seeds. The base and trained CIs don't overlap, and each seed beats base on its own (paired McNemar
+p ≤ 1.1e-05).
+
+- The gain is largest at pass@1 (+15.3 pts) and shrinks as k grows (+6.3 at pass@16). Most of what
+  GRPO does here is sharpen the policy toward answers the base model can already sample, rather
+  than teach it to solve problems it never solved. That fits what others report for RL on small
+  models.
+- Rebuild the figure from the committed comparison:
+  `uv run --group report python scripts/report_figures.py`.
 
 ## Layout
 
@@ -20,7 +35,7 @@ looking inside training. See [SPEC.md](SPEC.md) for the research questions, scop
 
 ```bash
 uv sync --all-packages
-uv run pytest                                              # 62 tests incl. 3 end-to-end learning runs
+uv run pytest                                              # 80 tests incl. 3 end-to-end learning runs
 uv run train --config trainer/configs/toy.yaml             # tiny random model learns a target token (CPU, seconds)
 uv run train --config trainer/configs/smoke_gsm8k.yaml     # Qwen2.5-0.5B on GSM8K, 3 steps (MPS/CUDA, ~1 GB download)
 GRPO_STORE=runs uv run uvicorn grpo_api.main:app --reload  # API on :8000
@@ -96,7 +111,8 @@ model is scored the same way it was trained.
 ```bash
 uv run evaluate run --model Qwen/Qwen2.5-0.5B-Instruct --label base   # greedy + pass@1/4/8/16
 uv run evaluate run --model checkpoints/<run_id>                        # one per training seed
-uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c>
+uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c> \
+  --json report/gsm8k-3seed.json     # committed; the README figure is drawn from it
 ```
 
 - **Greedy accuracy** is the headline. **pass@k** uses the unbiased estimator over `--samples`
@@ -132,6 +148,11 @@ cd web && NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev
 `pnpm build` writes the deployable site to `web/out/`, including the snapshot; it needs no server
 and no GPU. Re-run `export-static` before building to include new runs.
 
+**Deploying:** `bash scripts/deploy_dashboard.sh` snapshots, builds and uploads `web/out/` to Vercel
+(`--preview` for a preview URL). It deploys the prebuilt directory, not from git, because the
+snapshot comes from your local `runs/`, which isn't committed. Run `npx vercel@65.14.0 login` once
+first.
+
 - Pages take the run as a query param (`/run?id=…`, `/rollouts?id=…&step=…&prompt=…`), not a
   `[id]` route: a static export needs every dynamic route known at build time, which would tie
   the pages to one snapshot.
@@ -139,6 +160,41 @@ and no GPU. Re-run `export-static` before building to include new runs.
   `uv run runstore merge <src> <dst>` (it refuses run-id clashes and writes nothing if it does).
 - Not yet: per-token heatmaps (the trainer doesn't log token traces) and following one prompt
   across steps (training prompts don't repeat between logged steps).
+
+## What went wrong along the way
+
+Algorithm and training:
+- **The GSM8K `#### <n>` answer format starved the gradient.** Probing the base model before
+  renting a GPU, it scored ~2% greedy (6% at T=1) with that prompt, against ~44% with Qwen's own
+  `\boxed{}` math prompt. At 6%, about 60% of G=8 groups would get all-zero reward, which means
+  zero advantage and no gradient. The fix was to switch the prompt and verifier to `\boxed{}`, with
+  credit only when the box holds exactly one number. `adv/zero_group_frac` is logged every step
+  for this reason.
+- **bf16 weights silently froze training.** At lr=1e-6, AdamW updates to bf16 weights round to
+  zero. The fix keeps fp32 master weights with bf16 autocast; the config now rejects bf16
+  weights.
+- **No warmup collapsed the model in one step.** On the smoke config, Adam's first full-size step
+  pushed Qwen2.5-0.5B onto the format reward in one update. The fix was LR warmup (10 steps in the
+  GSM8K config).
+
+GPU runs on RunPod:
+- **No CUDA on some hosts.** The locked torch build needs CUDA ≥ 13 (driver ≥ 580). On older
+  hosts `torch.cuda.is_available()` is False, so `gpu_setup.sh` now fails fast.
+- **Frozen-looking logs.** Piped into `tee`, Python block-buffers stdout, so the tmux log sat
+  still for minutes. The fix is `PYTHONUNBUFFERED=1`.
+- **The pod didn't stop itself.** `RUNPOD_POD_ID` is only exported in `/etc/rp_environment`,
+  which non-interactive shells skip, so `runpodctl stop pod $RUNPOD_POD_ID` ran with an empty id.
+  The fix sources that file first, and it's now verified to stop the pod after a run.
+- **Runs need provenance.** A file copy onto the pod has no git history, so a run couldn't record
+  its commit. The pod now clones the repo, and every run records `git_sha`. Also, the `ssh.runpod.io` proxy can't rsync, so use the
+  pod's exposed TCP port.
+
+Known limitations:
+- The in-training `eval/accuracy` curve uses a 500-problem slice of the **test** set. It's a
+  progress signal only. The headline numbers score the final checkpoint on the full test set,
+  never a step picked from that curve.
+- No parity check against a reference implementation yet (M5). Correctness rests on the unit
+  tests below and the learning result above.
 
 ## What the tests pin down
 
