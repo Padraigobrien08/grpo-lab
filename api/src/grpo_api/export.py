@@ -2,13 +2,15 @@
 
 ``uv run export-static [OUT]`` (default ``web/public/data``) requests every API endpoint
 in-process and writes each response body unchanged to ``OUT/<path>.json``; for example
-``/runs/<id>/rollouts/10`` becomes ``OUT/runs/<id>/rollouts/10.json``. The web app's data
+``/runs/<id>/rollouts/10`` becomes ``OUT/runs/<id>/rollouts/10.json``, and a traced group
+``/runs/<id>/traces/10/0`` becomes ``OUT/runs/<id>/traces/10/0.json``. The web app's data
 layer maps API paths to those files, so the hosted dashboard serves exactly what the API serves.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 from pathlib import Path
@@ -43,6 +45,14 @@ def export_static(store_dir: str | Path, out_dir: str | Path) -> int:
         count += 1
         for step in client.get(f"/runs/{run_id}/rollouts").json():
             save(f"/runs/{run_id}/rollouts/{step}")
+            count += 1
+        save(f"/runs/{run_id}/traces")
+        count += 1
+        for step in client.get(f"/runs/{run_id}/traces").json():
+            # One file per group: the inspector loads a group's tokens only when it's opened.
+            for group in json.loads(save(f"/runs/{run_id}/traces/{step}")):
+                save(f"/runs/{run_id}/traces/{step}/{group}")
+                count += 1
             count += 1
     save("/runs")  # last, so a partial export has no index pointing at missing files
     return count + 1

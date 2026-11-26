@@ -23,16 +23,32 @@ def _row(i: int) -> dict:
     }
 
 
+def _trace(group: int) -> dict:
+    return {
+        "prompt_id": f"p{group}",
+        "group_idx": group,
+        "sample_idx": 0,
+        "token_ids": [1],
+        "tokens": ["a"],
+        "logprob": [-0.5],
+        "ref_logprob": None,
+        "kl": None,
+        "entropy": [1.0],
+        "ratio": [1.0],
+    }
+
+
 def test_export_mirrors_every_api_response(tmp_path):
     store = RunStore(tmp_path / "store")
     run_id = store.create_run("exp", {"lr": 1e-6})
     store.log_metrics(run_id, 1, {"reward/mean": 0.5})
     store.log_rollouts(run_id, 1, [_row(0), _row(1)])
     store.log_rollouts(run_id, 10, [_row(0)])
+    store.log_traces(run_id, 10, [_trace(0), _trace(2)])
     out = tmp_path / "data"
     (out / "runs" / "stale-run").mkdir(parents=True)  # from an earlier export
 
-    assert export_static(store.root, out) == 6
+    assert export_static(store.root, out) == 10
     client = TestClient(create_app(str(store.root)))
     paths = [
         "/runs",
@@ -41,6 +57,10 @@ def test_export_mirrors_every_api_response(tmp_path):
         f"/runs/{run_id}/rollouts",
         f"/runs/{run_id}/rollouts/1",
         f"/runs/{run_id}/rollouts/10",
+        f"/runs/{run_id}/traces",
+        f"/runs/{run_id}/traces/10",
+        f"/runs/{run_id}/traces/10/0",
+        f"/runs/{run_id}/traces/10/2",
     ]
     for path in paths:
         assert (out / f"{path.lstrip('/')}.json").read_bytes() == client.get(path).content

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from grpo_lab.algo.advantages import AdvantageScale
 from grpo_lab.algo.losses import Aggregation
@@ -89,6 +89,8 @@ class EvalConfig(_Strict):
 class LogConfig(_Strict):
     store_dir: str = "runs"
     rollout_every: int = 10  # also always logged on the first and last step
+    # On rollout-logging steps, also log per-token traces for the first N groups. 0 = off.
+    trace_groups: int = Field(default=2, ge=0)
     print_every: int = 1
     save_final: bool = False  # save the final policy (HF format) to checkpoint_dir/<run_id>
     checkpoint_dir: str = "checkpoints"

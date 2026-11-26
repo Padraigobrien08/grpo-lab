@@ -30,6 +30,24 @@ def test_endpoints(tmp_path):
             }
         ],
     )
+    store.log_traces(
+        run_id,
+        1,
+        [
+            {
+                "prompt_id": "p",
+                "group_idx": 0,
+                "sample_idx": 0,
+                "token_ids": [7, 2],
+                "tokens": ["a", "<eos>"],
+                "logprob": [-0.123456, -2.0],
+                "ref_logprob": None,
+                "kl": None,
+                "entropy": [1.5, 0.25],
+                "ratio": [1.0, 1.0],
+            }
+        ],
+    )
     client = TestClient(create_app(str(tmp_path)))
 
     assert client.get("/health").json() == {"status": "ok"}
@@ -43,5 +61,13 @@ def test_endpoints(tmp_path):
     }
     assert client.get(f"/runs/{run_id}/rollouts").json() == [1]
     assert client.get(f"/runs/{run_id}/rollouts/1").json()[0]["completion"] == "a"
+    assert client.get(f"/runs/{run_id}/traces").json() == [1]
+    assert client.get(f"/runs/{run_id}/traces/1").json() == [0]
+    [trace] = client.get(f"/runs/{run_id}/traces/1/0").json()
+    assert trace["tokens"] == ["a", "<eos>"] and trace["kl"] is None
+    assert trace["logprob"] == [-0.1235, -2.0]  # rounded to 4 significant digits
+    assert client.get(f"/runs/{run_id}/traces/1/5").json() == []
+    assert client.get(f"/runs/{run_id}/traces/9").json() == []
+    assert client.get("/runs/nope/traces").status_code == 404
     assert client.get("/runs/nope").status_code == 404
     assert client.get("/runs/nope/metrics").status_code == 404

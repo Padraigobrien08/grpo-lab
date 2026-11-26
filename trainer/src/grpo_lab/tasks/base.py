@@ -35,6 +35,10 @@ class Task(ABC):
     @abstractmethod
     def decode(self, token_ids: list[int]) -> str: ...
 
+    def decode_tokens(self, token_ids: list[int]) -> list[str]:
+        """Each token as text on its own, for per-token displays (token traces)."""
+        return [self.decode([t]) for t in token_ids]
+
     def eval_prompts(self, n: int) -> list[Prompt]:
         """A fixed held-out set: the same ``n`` prompts on every call, disjoint from training."""
         raise NotImplementedError(f"{type(self).__name__} has no held-out eval set")
