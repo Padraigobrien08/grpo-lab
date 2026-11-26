@@ -129,10 +129,12 @@ uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c> \
 
 ## Dashboard (M4)
 
-Three views over the run store: **Runs** (final metrics and the config keys that differ between
+Four views over the run store: **Runs** (final metrics and the config keys that differ between
 runs), **Run detail** (metric curves with EMA smoothing; click a chart to open the rollouts logged
-nearest that step) and the **Rollout inspector** (pick a logged step and a prompt to see all G
-samples with their rewards, advantages, lengths and boxed answers).
+nearest that step), the **Rollout inspector** (pick a logged step and a prompt to see all G
+samples with their rewards, advantages, lengths and boxed answers) and **Compare** (runs grouped
+by training config, seeds pooled: a mean curve with a 95% t-band per group, labelled by what each
+group changes relative to the baseline, the group with the most runs).
 
 **Token heatmap.** On every rollout-logging step the trainer also records per-token traces for
 the first `log.trace_groups` groups (default 2; `0` turns it off). For those groups, marked

@@ -11,6 +11,9 @@ export function SiteHeader() {
           <Link href="/" className="hover:text-foreground">
             Runs
           </Link>
+          <Link href="/compare" className="hover:text-foreground">
+            Compare
+          </Link>
         </nav>
         <a
           href="https://github.com/Padraigobrien08/grpo-lab"
