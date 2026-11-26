@@ -84,11 +84,11 @@ export default function JournalPage() {
     <div className={`journal ${serif.variable} flex-1`}>
       <main className="mx-auto w-full max-w-5xl px-4 pt-12 pb-24 sm:px-6">
         <header className="journal-head">
-          <h1>From-scratch GRPO lifts a 0.5B model six points on GSM8K. Here is how we got there.</h1>
+          <h1>From-scratch GRPO lifts a 0.5B model six points on GSM8K. This is how we got there.</h1>
           <p className="journal-lede">
-            A lab notebook for grpo-lab: one entry per milestone, newest first. Each title states
-            what we found, every figure is measured, and each caveat says what went wrong or what
-            the number doesn&rsquo;t show.
+            The grpo-lab notebook, newest entry first. Titles say what we found rather than what we
+            did, and we measured every number on the page ourselves; where something went wrong, or
+            a figure hides a catch, the entry ends with a caveat.
           </p>
           <ul className="journal-status" aria-label="Current state">
             {STATUS.map((s) => (
