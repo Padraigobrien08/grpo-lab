@@ -28,6 +28,7 @@ from grpo_lab.eval import greedy_eval
 from grpo_lab.models import autocast, load_policy, resolve_device
 from grpo_lab.rollout import RolloutBatch, generate_group_rollouts
 from grpo_lab.tasks import Prompt, Task, build_task
+from grpo_lab.traces import TraceBuffer
 from runstore import RunStore
 
 
@@ -189,6 +190,12 @@ def train(cfg: Config) -> TrainResult:
             n_seq = batch.input_ids.shape[0]
             cmask = batch.completion_mask
             n_tok = cmask.sum().item()
+            log_rollouts = step == 1 or step == tc.steps or step % cfg.log.rollout_every == 0
+            trace = (
+                TraceBuffer(min(cfg.log.trace_groups * group, n_seq), cmask.shape[1])
+                if log_rollouts and cfg.log.trace_groups > 0
+                else None
+            )
             # With a single pass, old log-probs equal the current ones (ratio == 1), so reuse
             # them instead of paying for an extra forward pass.
             old_lp = (
@@ -205,7 +212,7 @@ def train(cfg: Config) -> TrainResult:
             model.train()
             sums: dict[str, float] = {}
             loss_total, entropy_sum, grad_norm = 0.0, 0.0, 0.0
-            for _ in range(algo.num_iterations):
+            for it in range(algo.num_iterations):
                 optimizer.zero_grad(set_to_none=True)
                 for mb in _micro_batches(n_seq, tc.micro_batch_size):
                     with autocast(device, amp):
@@ -217,9 +224,16 @@ def train(cfg: Config) -> TrainResult:
                             algo.temperature,
                             return_entropy=True,
                         )
+                    mb_old = old_lp[mb] if old_lp is not None else lp.detach()
+                    if trace is not None:
+                        assert ent is not None
+                        if it == 0:
+                            trace.record_first_pass(mb, lp, ent)
+                        if it == algo.num_iterations - 1:
+                            trace.record_last_pass(mb, lp, mb_old)
                     out = grpo_loss(
                         lp,
-                        old_lp[mb] if old_lp is not None else lp.detach(),
+                        mb_old,
                         advantages[mb],
                         cmask[mb],
                         ref_logprobs=ref_lp[mb] if ref_lp is not None else None,
@@ -277,7 +291,7 @@ def train(cfg: Config) -> TrainResult:
             store.log_metrics(run_id, step, metrics)
             result.history.append(metrics)
 
-            if step == 1 or step == tc.steps or step % cfg.log.rollout_every == 0:
+            if log_rollouts:
                 store.log_rollouts(
                     run_id,
                     step,
@@ -290,6 +304,18 @@ def train(cfg: Config) -> TrainResult:
                         rewards_list,
                         advantages,
                         group,
+                    ),
+                )
+            if trace is not None:
+                store.log_traces(
+                    run_id,
+                    step,
+                    trace.rows(
+                        [p.id for p in prompts],
+                        completions,
+                        group,
+                        task.decode_tokens,
+                        ref_logprob=ref_lp,
                     ),
                 )
             if step % cfg.log.print_every == 0 or step == tc.steps:

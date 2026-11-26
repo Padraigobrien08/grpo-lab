@@ -2,8 +2,9 @@
 
 On-disk layout under ``root``::
 
-    store.sqlite                            runs + metrics (SQLite, WAL mode)
-    rollouts/<run_id>/step_000010.parquet   logged rollout groups for one step
+    store.sqlite                                runs + metrics (SQLite, WAL mode)
+    rollouts/<run_id>/step_000010.parquet       logged rollout groups for one step
+    token_traces/<run_id>/step_000010.parquet   per-token values for a few of those groups
 
 The trainer and API never talk to each other directly; both depend only on this module.
 That lets the dashboard be built and deployed against recorded runs with no GPU attached.
@@ -46,6 +47,31 @@ ROLLOUT_SCHEMA = pa.schema(
     ]
 )
 ROLLOUT_COLUMNS = tuple(ROLLOUT_SCHEMA.names)
+
+# One row per traced sample, keyed like its rollout row; list columns hold one value per
+# completion token (up to and including EOS). ref_logprob and kl are null when beta == 0.
+TRACE_SCHEMA = pa.schema(
+    [
+        ("run_id", pa.string()),
+        ("step", pa.int64()),
+        ("prompt_id", pa.string()),
+        ("group_idx", pa.int64()),
+        ("sample_idx", pa.int64()),
+        ("token_ids", pa.list_(pa.int32())),
+        ("tokens", pa.list_(pa.string())),  # each token decoded on its own
+        ("logprob", pa.list_(pa.float32())),  # under the sampling policy
+        ("ref_logprob", pa.list_(pa.float32())),
+        ("kl", pa.list_(pa.float32())),  # k3 estimator against the reference
+        ("entropy", pa.list_(pa.float32())),
+        ("ratio", pa.list_(pa.float32())),  # pi / pi_old on the last pass; 1 when mu == 1
+    ]
+)
+TRACE_COLUMNS = tuple(TRACE_SCHEMA.names)
+_TRACE_LISTS = ("token_ids", "tokens", "logprob", "ref_logprob", "kl", "entropy", "ratio")
+_NULLABLE_TRACE_LISTS = ("ref_logprob", "kl")
+
+# Per-run directories of Parquet files, one file per logged step.
+_RUN_FILE_TREES = ("rollouts", "token_traces")
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -152,6 +178,28 @@ class RunStore:
         pq.write_table(table, path, compression="zstd")
         return path
 
+    def log_traces(self, run_id: str, step: int, rows: Sequence[Mapping[str, Any]]) -> Path:
+        records = [{**row, "run_id": run_id, "step": step} for row in rows]
+        for r in records:
+            missing = set(TRACE_COLUMNS) - set(r)
+            if missing:
+                raise ValueError(f"trace rows missing columns: {sorted(missing)}")
+            n = len(r["token_ids"])
+            bad = [
+                k
+                for k in _TRACE_LISTS
+                if (r[k] is None and k not in _NULLABLE_TRACE_LISTS)
+                or (r[k] is not None and len(r[k]) != n)
+            ]
+            if bad:
+                raise ValueError(f"trace lists {bad} are null or don't match {n} token_ids")
+        table = pa.Table.from_pylist(records, schema=TRACE_SCHEMA)
+        out_dir = self.root / "token_traces" / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"step_{step:06d}.parquet"
+        pq.write_table(table, path, compression="zstd")
+        return path
+
     # ---- reads (API) ------------------------------------------------------------------------
 
     def list_runs(self) -> list[RunInfo]:
@@ -206,10 +254,7 @@ class RunStore:
         return {key: (step, value) for key, step, value in rows}
 
     def rollout_steps(self, run_id: str) -> list[int]:
-        run_dir = self.root / "rollouts" / run_id
-        if not run_dir.is_dir():
-            return []
-        return sorted(int(p.stem.removeprefix("step_")) for p in run_dir.glob("step_*.parquet"))
+        return _steps_in(self.root / "rollouts" / run_id)
 
     def read_rollouts(self, run_id: str, step: int) -> list[dict[str, Any]]:
         path = self.root / "rollouts" / run_id / f"step_{step:06d}.parquet"
@@ -217,9 +262,36 @@ class RunStore:
             return []
         return pq.read_table(path).to_pylist()
 
+    def trace_steps(self, run_id: str) -> list[int]:
+        return _steps_in(self.root / "token_traces" / run_id)
+
+    def trace_groups(self, run_id: str, step: int) -> list[int]:
+        path = self._trace_path(run_id, step)
+        if not path.exists():
+            return []
+        return sorted(set(pq.read_table(path, columns=["group_idx"])["group_idx"].to_pylist()))
+
+    def read_traces(
+        self, run_id: str, step: int, group_idx: int | None = None
+    ) -> list[dict[str, Any]]:
+        path = self._trace_path(run_id, step)
+        if not path.exists():
+            return []
+        filters = [("group_idx", "=", group_idx)] if group_idx is not None else None
+        return pq.read_table(path, filters=filters).to_pylist()
+
+    def _trace_path(self, run_id: str, step: int) -> Path:
+        return self.root / "token_traces" / run_id / f"step_{step:06d}.parquet"
+
+
+def _steps_in(run_dir: Path) -> list[int]:
+    if not run_dir.is_dir():
+        return []
+    return sorted(int(p.stem.removeprefix("step_")) for p in run_dir.glob("step_*.parquet"))
+
 
 def merge_store(src: str | Path, dst: str | Path) -> list[str]:
-    """Copy every run (row, metrics, rollouts) from the store at ``src`` into ``dst``.
+    """Copy every run (row, metrics, rollouts, token traces) from ``src`` into ``dst``.
 
     For stores written on different machines, e.g. runs trained on separate GPU pods. Refuses,
     before writing anything, if a run id already exists in ``dst``. Returns the merged run ids.
@@ -241,7 +313,7 @@ def merge_store(src: str | Path, dst: str | Path) -> list[str]:
             rid
             for rid in run_ids
             if conn.execute("SELECT 1 FROM runs WHERE id = ?", (rid,)).fetchone()
-            or (dst_store.root / "rollouts" / rid).exists()
+            or any((dst_store.root / tree / rid).exists() for tree in _RUN_FILE_TREES)
         ]
         if clashes:
             raise ValueError(f"runs already in destination: {clashes}")
@@ -249,10 +321,11 @@ def merge_store(src: str | Path, dst: str | Path) -> list[str]:
         copied: list[Path] = []
         try:
             for rid in run_ids:
-                src_dir = src_root / "rollouts" / rid
-                if src_dir.is_dir():
-                    copied.append(dst_store.root / "rollouts" / rid)
-                    shutil.copytree(src_dir, copied[-1])
+                for tree in _RUN_FILE_TREES:
+                    src_dir = src_root / tree / rid
+                    if src_dir.is_dir():
+                        copied.append(dst_store.root / tree / rid)
+                        shutil.copytree(src_dir, copied[-1])
             conn.execute("INSERT INTO runs SELECT * FROM src.runs")
             conn.execute("INSERT INTO metrics SELECT * FROM src.metrics")
         except BaseException:

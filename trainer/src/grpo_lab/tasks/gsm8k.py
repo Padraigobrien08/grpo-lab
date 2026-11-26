@@ -81,3 +81,8 @@ class GSM8KTask(Task):
 
     def decode(self, token_ids: list[int]) -> str:
         return self.tokenizer.decode(token_ids, skip_special_tokens=True)
+
+    def decode_tokens(self, token_ids: list[int]) -> list[str]:
+        # Special tokens kept, so a trace shows where EOS landed. A character split across
+        # byte-level tokens decodes as U+FFFD on each piece; rare in GSM8K's mostly-ASCII text.
+        return [self.tokenizer.decode([t]) for t in token_ids]

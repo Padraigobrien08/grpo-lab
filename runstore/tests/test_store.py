@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from runstore import ROLLOUT_COLUMNS, RunStore, merge_store
+from runstore import ROLLOUT_COLUMNS, TRACE_COLUMNS, RunStore, merge_store
 from runstore.cli import main as cli_main
 
 
@@ -19,6 +19,21 @@ def _row(i: int) -> dict:
         "advantage": 0.5,
         "length": 3,
         "truncated": False,
+    }
+
+
+def _trace(group: int, sample: int, n: int = 3, beta: bool = True) -> dict:
+    return {
+        "prompt_id": f"p{group}",
+        "group_idx": group,
+        "sample_idx": sample,
+        "token_ids": list(range(n)),
+        "tokens": [f"t{i}" for i in range(n)],
+        "logprob": [-0.5] * n,
+        "ref_logprob": [-0.25] * n if beta else None,
+        "kl": [0.125] * n if beta else None,
+        "entropy": [1.0] * n,
+        "ratio": [1.0] * n,
     }
 
 
@@ -58,6 +73,42 @@ def test_rollout_rows_must_be_complete(tmp_path):
         store.log_rollouts(run_id, 1, [row])
 
 
+def test_trace_roundtrip_and_group_filter(tmp_path):
+    store = RunStore(tmp_path)
+    run_id = store.create_run("exp", {})
+    store.log_traces(run_id, 10, [_trace(0, 0), _trace(0, 1, n=5), _trace(3, 0, beta=False)])
+    store.log_traces(run_id, 1, [_trace(0, 0)])
+    assert store.trace_steps(run_id) == [1, 10]
+    assert store.trace_groups(run_id, 10) == [0, 3]
+    assert store.trace_groups(run_id, 999) == []
+
+    rows = store.read_traces(run_id, 10, group_idx=0)
+    assert [r["sample_idx"] for r in rows] == [0, 1] and set(rows[0]) == set(TRACE_COLUMNS)
+    assert rows[1]["tokens"] == ["t0", "t1", "t2", "t3", "t4"] and rows[1]["step"] == 10
+    assert rows[0]["kl"] == [0.125] * 3  # float32 round-trips exactly for these values
+    [no_ref] = store.read_traces(run_id, 10, group_idx=3)
+    assert no_ref["ref_logprob"] is None and no_ref["kl"] is None
+    assert len(store.read_traces(run_id, 10)) == 3
+    assert store.read_traces(run_id, 999) == []
+    assert store.trace_steps("other-run") == []
+
+
+def test_trace_rows_are_validated(tmp_path):
+    store = RunStore(tmp_path)
+    run_id = store.create_run("exp", {})
+    row = _trace(0, 0)
+    del row["entropy"]
+    with pytest.raises(ValueError, match="entropy"):
+        store.log_traces(run_id, 1, [row])
+    ragged = _trace(0, 0)
+    ragged["logprob"] = [-0.5]
+    with pytest.raises(ValueError, match="logprob"):
+        store.log_traces(run_id, 1, [ragged])
+    no_entropy = {**_trace(0, 0), "entropy": None}  # only ref_logprob and kl may be null
+    with pytest.raises(ValueError, match="entropy"):
+        store.log_traces(run_id, 1, [no_entropy])
+
+
 def test_merge_store_copies_runs_metrics_and_rollouts(tmp_path):
     dst = RunStore(tmp_path / "dst")
     kept = dst.create_run("local", {"seed": 0})
@@ -65,6 +116,7 @@ def test_merge_store_copies_runs_metrics_and_rollouts(tmp_path):
     moved = src.create_run("pod", {"seed": 1}, seed=1, git_sha="abc")
     src.log_metrics(moved, 5, {"reward/mean": 0.7})
     src.log_rollouts(moved, 5, [_row(0)])
+    src.log_traces(moved, 5, [_trace(0, 0)])
     src.finish_run(moved)
 
     assert merge_store(src.root, dst.root) == [moved]
@@ -72,6 +124,7 @@ def test_merge_store_copies_runs_metrics_and_rollouts(tmp_path):
     assert dst.get_run(moved) == src.get_run(moved)
     assert dst.get_metrics(moved) == {"reward/mean": [(5, 0.7)]}
     assert dst.read_rollouts(moved, 5) == src.read_rollouts(moved, 5)
+    assert dst.read_traces(moved, 5) == src.read_traces(moved, 5) != []
 
 
 def test_merge_store_refuses_clashes_without_writing(tmp_path):

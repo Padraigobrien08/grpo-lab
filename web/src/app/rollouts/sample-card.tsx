@@ -6,12 +6,27 @@ import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { RolloutRow } from "@/lib/api";
+import type { RolloutRow, TraceRow } from "@/lib/api";
 import { renderTex, splitMath } from "@/lib/math";
 import { components } from "@/lib/rollouts";
+import type { Scale, TokenView } from "@/lib/traces";
 import { cn } from "@/lib/utils";
 
-export function SampleCard({ row, maxAbsAdvantage }: { row: RolloutRow; maxAbsAdvantage: number }) {
+import { TokenHeatmap } from "./token-trace";
+
+export function SampleCard({
+  row,
+  maxAbsAdvantage,
+  trace,
+  view = "text",
+  scale,
+}: {
+  row: RolloutRow;
+  maxAbsAdvantage: number;
+  trace?: TraceRow;
+  view?: TokenView;
+  scale?: Scale | null;
+}) {
   const comps = components(row);
   const correct = comps.correct === 1;
   const extras = Object.entries(comps).filter(([k]) => k !== "correct");
@@ -40,7 +55,11 @@ export function SampleCard({ row, maxAbsAdvantage }: { row: RolloutRow; maxAbsAd
         {row.truncated && <Badge variant="destructive">truncated</Badge>}
         <AdvantageBar value={row.advantage} maxAbs={maxAbsAdvantage} />
       </header>
-      <Completion text={row.completion} />
+      {view !== "text" && trace && scale ? (
+        <TokenHeatmap row={trace} view={view} scale={scale} />
+      ) : (
+        <Completion text={row.completion} />
+      )}
     </article>
   );
 }

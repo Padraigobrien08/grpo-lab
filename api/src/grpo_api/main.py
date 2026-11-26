@@ -70,7 +70,34 @@ def create_app(store_dir: str | None = None) -> FastAPI:
         _require_run(run_id)
         return store.read_rollouts(run_id, step)
 
+    @app.get("/runs/{run_id}/traces")
+    def trace_steps(run_id: str) -> list[int]:
+        _require_run(run_id)
+        return store.trace_steps(run_id)
+
+    @app.get("/runs/{run_id}/traces/{step}")
+    def trace_groups(run_id: str, step: int) -> list[int]:
+        _require_run(run_id)
+        return store.trace_groups(run_id, step)
+
+    @app.get("/runs/{run_id}/traces/{step}/{group_idx}")
+    def traces(run_id: str, step: int, group_idx: int) -> list[dict[str, Any]]:
+        _require_run(run_id)
+        return [_compact_trace(row) for row in store.read_traces(run_id, step, group_idx)]
+
     return app
+
+
+_TRACE_FLOATS = ("logprob", "ref_logprob", "kl", "entropy", "ratio")
+
+
+def _compact_trace(row: dict[str, Any]) -> dict[str, Any]:
+    # 4 significant digits is plenty for a heatmap and roughly halves the JSON, which matters
+    # for the static snapshot. The run store keeps full float32.
+    return {
+        k: [float(f"{x:.4g}") for x in v] if k in _TRACE_FLOATS and v is not None else v
+        for k, v in row.items()
+    }
 
 
 app = create_app()
