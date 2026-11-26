@@ -1,16 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef } from "react";
 
-import { ErrorBlock, LoadingBlock } from "@/components/states";
+import { BackLink } from "@/components/back-link";
+import { ErrorBlock, InspectorSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { paths, type RolloutRow, type RunDetail, useJson } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import { components, type Group, groupRollouts } from "@/lib/rollouts";
+import { cn } from "@/lib/utils";
 
+import { Pips } from "./pips";
 import { SampleCard } from "./sample-card";
 
 export function RolloutInspector() {
@@ -28,7 +31,7 @@ export function RolloutInspector() {
 
   if (!id) return <ErrorBlock error="No run id in the URL (expected /rollouts?id=...)" />;
   for (const r of [run, steps, rows]) if (r.state === "error") return <ErrorBlock error={r.error} />;
-  if (run.state !== "ready" || steps.state !== "ready") return <LoadingBlock rows={8} />;
+  if (run.state !== "ready" || steps.state !== "ready") return <InspectorSkeleton />;
   if (stepList.length === 0 || step === null) {
     return <p className="text-sm text-muted-foreground">This run logged no rollouts.</p>;
   }
@@ -52,34 +55,31 @@ export function RolloutInspector() {
 
   return (
     <>
-      <header className="flex flex-col gap-3">
-        <Link
-          href={`/run?id=${encodeURIComponent(id)}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← {run.data.name}
-        </Link>
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Rollout inspector</h1>
-          <span className="font-mono text-xs text-muted-foreground">{run.data.id}</span>
+      <header className="flex flex-col gap-4">
+        <BackLink href={`/run?id=${encodeURIComponent(id)}`}>{run.data.name}</BackLink>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Rollouts</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Each step samples {groups[0]?.samples.length ?? "G"} completions per prompt. Advantages
+            are normalised within the group: a sample is pushed up only relative to its siblings,
+            and a group where every sample scored the same teaches nothing.
+          </p>
         </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Each training step samples {groups[0]?.samples.length ?? "G"} completions per prompt.
-          Advantages are normalised within the group, so a sample is pushed up only relative to
-          its siblings, and a group where every sample scored the same teaches nothing.
-        </p>
       </header>
 
-      <section className="flex items-center gap-3 rounded-lg border p-4 sm:gap-4">
+      <section
+        className="flex items-center gap-3 rounded-lg border p-4 sm:gap-4"
+        aria-label="Logged step"
+      >
         <span className="hidden text-sm text-muted-foreground sm:inline">Step</span>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           disabled={stepIdx <= 0}
           onClick={() => go({ step: stepList[stepIdx - 1] })}
           aria-label="Previous logged step"
         >
-          ←
+          <ChevronLeft aria-hidden />
         </Button>
         <div className="min-w-0 flex-1">
           <Slider
@@ -93,22 +93,22 @@ export function RolloutInspector() {
         </div>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           disabled={stepIdx >= stepList.length - 1}
           onClick={() => go({ step: stepList[stepIdx + 1] })}
           aria-label="Next logged step"
         >
-          →
+          <ChevronRight aria-hidden />
         </Button>
         <span className="shrink-0 font-mono text-sm tabular-nums">
-          {step} <span className="text-muted-foreground">/ {stepList.at(-1)}</span>
+          {step} <span className="text-muted-foreground">of {stepList.at(-1)}</span>
         </span>
       </section>
 
       {rows.state !== "ready" ? (
-        <LoadingBlock rows={8} />
+        <InspectorSkeleton bodyOnly />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
           <GroupList groups={groups} selected={selected} onSelect={(p) => go({ prompt: p })} />
           {selected && <GroupView group={selected} />}
         </div>
@@ -126,34 +126,42 @@ function GroupList({
   selected: Group | undefined;
   onSelect: (promptId: string) => void;
 }) {
+  const silent = groups.filter((g) => g.zeroAdvantage).length;
+  const current = useRef<HTMLButtonElement>(null);
+  // keep the selected group in view, e.g. when arriving from a shared ?prompt= link
+  useEffect(() => {
+    current.current?.scrollIntoView({ block: "nearest", inline: "start" });
+  }, [selected]);
   return (
-    <nav aria-label="Prompt groups" className="flex flex-col gap-1">
-      <p className="px-1 pb-1 text-xs text-muted-foreground">
-        {groups.length} prompts · {groups.filter((g) => g.zeroAdvantage).length} with zero
-        advantage
+    <nav aria-label="Prompt groups" className="flex min-w-0 flex-col gap-2">
+      <p className="text-xs text-muted-foreground">
+        {groups.length} prompts · {silent} with no learning signal
       </p>
-      <div className="flex max-h-[70vh] flex-col gap-1 overflow-y-auto pr-1">
+      {/* a horizontal strip on narrow screens, so the samples stay one scroll away */}
+      <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:max-h-[calc(100vh-14rem)] lg:snap-none lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:px-0 lg:pr-1">
         {groups.map((g) => (
           <button
             key={g.promptId}
+            ref={g === selected ? current : undefined}
             type="button"
             onClick={() => onSelect(g.promptId)}
             aria-current={g === selected}
             className={cn(
-              "flex flex-col gap-1 rounded-lg border px-3 py-2 text-left text-xs transition-colors hover:bg-muted",
-              g === selected && "border-foreground/40 bg-muted",
+              "flex w-60 shrink-0 snap-start flex-col gap-1.5 rounded-lg border px-3 py-2 text-left text-xs transition-colors hover:bg-muted lg:w-auto",
+              g === selected && "border-foreground/30 bg-muted",
             )}
           >
             <span className="flex items-center justify-between gap-2">
-              <span className="font-mono text-muted-foreground">{g.promptId}</span>
-              <span className="tabular-nums">
-                {g.correct}/{g.samples.length} correct
+              <Pips samples={g.samples} />
+              <span className="tabular-nums text-muted-foreground">
+                {g.correct}/{g.samples.length}
               </span>
             </span>
-            <span className="line-clamp-2">{g.prompt}</span>
-            {g.zeroAdvantage && (
-              <span className="text-muted-foreground">all rewards equal · no signal</span>
-            )}
+            <span className="line-clamp-2 text-foreground/90">{g.prompt}</span>
+            <span className="flex items-center justify-between gap-2 text-muted-foreground">
+              <span className="font-mono">{g.promptId}</span>
+              {g.zeroAdvantage && <span>no signal</span>}
+            </span>
           </button>
         ))}
       </div>
@@ -163,30 +171,34 @@ function GroupList({
 
 function GroupView({ group }: { group: Group }) {
   const names = [...new Set(group.samples.flatMap((s) => Object.keys(components(s))))];
+  const maxAbs = Math.max(...group.samples.map((s) => Math.abs(s.advantage)));
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex min-w-0 flex-col gap-4" aria-label={`Group ${group.promptId}`}>
       <div className="flex flex-col gap-3 rounded-lg border p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground">{group.promptId}</span>
-          <Badge variant="outline">
-            {group.correct}/{group.samples.length} correct
-          </Badge>
-          <Badge variant="outline">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs tabular-nums">
+          <span className="flex items-center gap-2">
+            <Pips samples={group.samples} />
+            <span>
+              {group.correct} of {group.samples.length} correct
+            </span>
+          </span>
+          <span className="text-muted-foreground">
             reward {group.rewardMean.toFixed(2)} ± {group.rewardStd.toFixed(2)}
-          </Badge>
-          {group.zeroAdvantage && <Badge variant="secondary">zero advantage</Badge>}
+          </span>
+          {group.zeroAdvantage && <Badge variant="secondary">no learning signal</Badge>}
+          <span className="ml-auto font-mono text-muted-foreground">{group.promptId}</span>
         </div>
-        <p className="text-sm whitespace-pre-wrap">{group.prompt}</p>
-        <p className="text-xs text-muted-foreground">
-          Reward = {names.join(" + ") || "total"} (weighted). Per-token traces (KL, entropy,
-          ratio) were not recorded for these runs, so there is no token heatmap yet.
-        </p>
+        <p className="max-w-[75ch] text-base leading-relaxed whitespace-pre-wrap">{group.prompt}</p>
       </div>
       <div className="grid gap-3 xl:grid-cols-2">
         {group.samples.map((s) => (
-          <SampleCard key={s.sample_idx} row={s} />
+          <SampleCard key={s.sample_idx} row={s} maxAbsAdvantage={maxAbs} />
         ))}
       </div>
+      <p className="text-xs text-muted-foreground">
+        Reward = {names.join(" + ") || "total"} (weighted). Per-token traces (KL, entropy, ratio)
+        weren&apos;t recorded for these runs, so there&apos;s no token heatmap yet.
+      </p>
     </section>
   );
 }
