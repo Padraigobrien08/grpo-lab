@@ -1,7 +1,8 @@
 # grpo-lab
 
 From-scratch GRPO-style RL post-training for small language models, plus a dashboard for
-looking inside training. See [SPEC.md](SPEC.md) for the research questions, scope and milestones.
+looking inside training: **[grpo-lab-seven.vercel.app](https://grpo-lab-seven.vercel.app)**
+(recorded runs; no GPU or server behind it). See [SPEC.md](SPEC.md) for the research questions, scope and milestones.
 
 **Status:** MVP done (M0–M4: scaffold, algorithm core, first GSM8K run, eval harness, dashboard).
 Next: M5 (parity with TRL's `GRPOTrainer`) and the RQ1 ablations; see [SPEC.md](SPEC.md) §6.

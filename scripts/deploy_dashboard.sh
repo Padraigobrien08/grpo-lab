@@ -21,4 +21,6 @@ uv run export-static
 # which is what the app links to.
 echo '{"cleanUrls": true}' > web/out/vercel.json
 
-$VERCEL deploy web/out $TARGET
+# `pnpm build` wipes web/out (and any .vercel link in it), so link to the project on every run.
+$VERCEL link --yes --project grpo-lab --cwd web/out
+$VERCEL deploy --cwd web/out $TARGET
