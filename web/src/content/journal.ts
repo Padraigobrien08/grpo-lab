@@ -29,7 +29,7 @@ export const STATUS = [
   "85 tests green",
   "Qwen2.5-0.5B on GSM8K",
   "+6.0 pts greedy over base",
-  "M7 ablations running",
+  "M7: 1 of 4 runs back",
 ];
 
 export const JOURNAL: JournalEntry[] = [
@@ -156,17 +156,18 @@ export const JOURNAL: JournalEntry[] = [
     date: "2026-11-26",
     milestone: "M7 · RQ1 ablations",
     status: "in-progress",
-    title: "Two published recipes against the baseline, two seeds each",
+    title: "The first Dr. GRPO seed lands right where vanilla GRPO did",
     body: [
       "Which GRPO design choices matter at this scale? Dr. GRPO drops the per-group std scaling and uses a constant loss normaliser, while DAPO-lite switches to a token-level mean, clip-higher at 0.28 and no KL. Seeds 0 and 1 of each run at the same time, one pod apiece. The baseline is M3's seeds, since nobody touched that config.",
-      "Each run finishes with the same full-test-set greedy eval M3 used. Results land here when the pods finish.",
+      "Dr. GRPO seed 0 came back first, from the L40S, about an hour and a half after launch: 53.0% greedy on all 1,319 test problems, +5.4 points over base on the same problems (paired 95% CI [+3.0, +7.8], McNemar p = 1.6e-05). M3's vanilla seeds scored 53.1%, 54.1% and 53.6%, so this one sits at the bottom of their range without falling out of it. It also brought back the project's first real token traces.",
+      "The other three runs are still on their A40s, and each one lands here as it finishes.",
     ],
     figures: [
-      { value: "4", label: "runs in parallel: 3 × A40, 1 × L40S" },
-      { value: "$2.86/hr", label: "for all four, each stopping itself when done" },
+      { value: "53.0%", label: "Dr. GRPO seed 0, greedy, full test set" },
+      { value: "+5.4", label: "points over base, paired 95% CI [+3.0, +7.8]" },
     ],
     caveat:
-      "Two seeds make for wide intervals, with a t-multiplier of 12.7, and a third seed of each is the cheapest way to tighten them. DAPO-lite also lacks dynamic sampling and the overlong penalty; neither exists in the trainer yet.",
+      "One seed says nothing about the recipe yet: vanilla GRPO's own seeds spread over a full point, so Dr. GRPO's second seed has to land before we can compare the two. Even then, two seeds make for wide intervals (a t-multiplier of 12.7). DAPO-lite also lacks dynamic sampling and the overlong penalty; neither exists in the trainer yet.",
     links: [{ label: "Compare", href: "/compare" }],
   },
 ];
