@@ -40,6 +40,20 @@ export type RolloutRow = {
   truncated: boolean;
 };
 
+/** Per-token values for one traced sample; every list has one entry per completion token. */
+export type TraceRow = {
+  prompt_id: string;
+  group_idx: number;
+  sample_idx: number;
+  token_ids: number[];
+  tokens: string[];
+  logprob: number[];
+  ref_logprob: number[] | null; // null when the run had no reference model (beta = 0)
+  kl: number[] | null;
+  entropy: number[];
+  ratio: number[];
+};
+
 /**
  * Two data sources behind the same paths:
  * - NEXT_PUBLIC_API_URL set: the live FastAPI server (local development against a run store).
@@ -57,6 +71,10 @@ export const paths = {
   metrics: (id: string) => `/runs/${encodeURIComponent(id)}/metrics`,
   rolloutSteps: (id: string) => `/runs/${encodeURIComponent(id)}/rollouts`,
   rollouts: (id: string, step: number) => `/runs/${encodeURIComponent(id)}/rollouts/${step}`,
+  traceSteps: (id: string) => `/runs/${encodeURIComponent(id)}/traces`,
+  traceGroups: (id: string, step: number) => `/runs/${encodeURIComponent(id)}/traces/${step}`,
+  traces: (id: string, step: number, group: number) =>
+    `/runs/${encodeURIComponent(id)}/traces/${step}/${group}`,
 };
 
 const cache = new Map<string, Promise<unknown>>();

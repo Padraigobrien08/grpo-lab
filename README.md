@@ -134,6 +134,17 @@ runs), **Run detail** (metric curves with EMA smoothing; click a chart to open t
 nearest that step) and the **Rollout inspector** (pick a logged step and a prompt to see all G
 samples with their rewards, advantages, lengths and boxed answers).
 
+**Token heatmap.** On every rollout-logging step the trainer also records per-token traces for
+the first `log.trace_groups` groups (default 2; `0` turns it off). For those groups, marked
+"tokens" in the inspector's prompt list, the completions can be coloured by **surprisal**
+(−log p under the sampling policy), **entropy**, **KL** to the reference, or the **ratio**
+π/π_old. One scale is shared across the group so siblings compare token by token; hover a token
+for all its values. The values are copied from tensors the update already computes, so tracing
+adds no forward passes. On GSM8K it should add about 7 MB of snapshot JSON per 300-step run
+(projected from ~50 bytes per token on a smoke run).
+Ratio is exactly 1 when `algo.num_iterations` is 1, and KL is absent when `algo.beta` is 0, so
+the inspector disables those views.
+
 It's a static Next.js site (`output: "export"`) that fetches JSON in the browser, from one of two
 sources behind the same paths:
 
@@ -156,13 +167,13 @@ first. The root `vercel.json` turns off git-triggered deploys: the Vercel projec
 this repo, and a git build would auto-detect the FastAPI app and replace the dashboard with an
 API that has no runs.
 
-- Pages take the run as a query param (`/run?id=…`, `/rollouts?id=…&step=…&prompt=…`), not a
+- Pages take the run as a query param (`/run?id=…`, `/rollouts?id=…&step=…&prompt=…&tokens=…`), not a
   `[id]` route: a static export needs every dynamic route known at build time, which would tie
   the pages to one snapshot.
 - Runs trained on different machines end up in different stores. Fold one into another with
   `uv run runstore merge <src> <dst>` (it refuses run-id clashes and writes nothing if it does).
-- Not yet: per-token heatmaps (the trainer doesn't log token traces) and following one prompt
-  across steps (training prompts don't repeat between logged steps).
+- Not yet: following one prompt across steps (training prompts don't repeat between logged
+  steps). Runs trained before token traces existed (the M2/M3 runs) have no heatmap.
 
 ## What went wrong along the way
 

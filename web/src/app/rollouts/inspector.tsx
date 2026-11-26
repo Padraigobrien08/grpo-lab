@@ -9,12 +9,14 @@ import { ErrorBlock, InspectorSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { paths, type RolloutRow, type RunDetail, useJson } from "@/lib/api";
+import { paths, type RolloutRow, type RunDetail, type TraceRow, useJson } from "@/lib/api";
 import { components, type Group, groupRollouts } from "@/lib/rollouts";
+import { groupScale, isTokenView, type TokenView, unavailableViews } from "@/lib/traces";
 import { cn } from "@/lib/utils";
 
 import { Pips } from "./pips";
 import { SampleCard } from "./sample-card";
+import { ScaleLegend, TokenViewPicker } from "./token-trace";
 
 export function RolloutInspector() {
   const params = useSearchParams();
@@ -28,6 +30,14 @@ export function RolloutInspector() {
   const requested = Number(params.get("step"));
   const step = stepList.includes(requested) ? requested : (stepList[0] ?? null);
   const rows = useJson<RolloutRow[]>(id && step !== null ? paths.rollouts(id, step) : null);
+  // Token traces exist for a few groups at some logged steps; older runs have none.
+  const traceSteps = useJson<number[]>(id && paths.traceSteps(id));
+  const stepTraced =
+    traceSteps.state === "ready" && step !== null && traceSteps.data.includes(step);
+  const tracedGroups = useJson<number[]>(
+    id && stepTraced && step !== null ? paths.traceGroups(id, step) : null,
+  );
+  const traced = new Set(tracedGroups.state === "ready" ? tracedGroups.data : []);
 
   if (!id) return <ErrorBlock error="No run id in the URL (expected /rollouts?id=...)" />;
   for (const r of [run, steps, rows]) if (r.state === "error") return <ErrorBlock error={r.error} />;
@@ -36,7 +46,7 @@ export function RolloutInspector() {
     return <p className="text-sm text-muted-foreground">This run logged no rollouts.</p>;
   }
 
-  const go = (next: { step?: number; prompt?: string | null }) => {
+  const go = (next: { step?: number; prompt?: string | null; tokens?: TokenView }) => {
     const q = new URLSearchParams(params.toString());
     if (next.step !== undefined) {
       q.set("step", String(next.step));
@@ -46,12 +56,18 @@ export function RolloutInspector() {
       if (next.prompt) q.set("prompt", next.prompt);
       else q.delete("prompt");
     }
+    if (next.tokens !== undefined) {
+      if (next.tokens === "text") q.delete("tokens");
+      else q.set("tokens", next.tokens);
+    }
     router.replace(`${pathname}?${q.toString()}`, { scroll: false });
   };
 
   const stepIdx = stepList.indexOf(step);
   const groups = rows.state === "ready" ? groupRollouts(rows.data) : [];
   const selected = groups.find((g) => g.promptId === params.get("prompt")) ?? groups[0];
+  const tokensParam = params.get("tokens");
+  const view: TokenView = isTokenView(tokensParam) ? tokensParam : "text";
 
   return (
     <>
@@ -109,8 +125,23 @@ export function RolloutInspector() {
         <InspectorSkeleton bodyOnly />
       ) : (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
-          <GroupList groups={groups} selected={selected} onSelect={(p) => go({ prompt: p })} />
-          {selected && <GroupView group={selected} />}
+          <GroupList
+            groups={groups}
+            selected={selected}
+            traced={traced}
+            onSelect={(p) => go({ prompt: p })}
+          />
+          {selected && (
+            <GroupView
+              group={selected}
+              tracePath={
+                traced.has(selected.groupIdx) ? paths.traces(id, step, selected.groupIdx) : null
+              }
+              anyTraces={traceSteps.state === "ready" && traceSteps.data.length > 0}
+              view={view}
+              onView={(v) => go({ tokens: v })}
+            />
+          )}
         </div>
       )}
     </>
@@ -120,10 +151,12 @@ export function RolloutInspector() {
 function GroupList({
   groups,
   selected,
+  traced,
   onSelect,
 }: {
   groups: Group[];
   selected: Group | undefined;
+  traced: Set<number>;
   onSelect: (promptId: string) => void;
 }) {
   const silent = groups.filter((g) => g.zeroAdvantage).length;
@@ -160,7 +193,10 @@ function GroupList({
             <span className="line-clamp-2 text-foreground/90">{g.prompt}</span>
             <span className="flex items-center justify-between gap-2 text-muted-foreground">
               <span className="font-mono">{g.promptId}</span>
-              {g.zeroAdvantage && <span>no signal</span>}
+              <span className="flex gap-2">
+                {traced.has(g.groupIdx) && <span className="text-foreground/80">tokens</span>}
+                {g.zeroAdvantage && <span>no signal</span>}
+              </span>
             </span>
           </button>
         ))}
@@ -169,9 +205,28 @@ function GroupList({
   );
 }
 
-function GroupView({ group }: { group: Group }) {
+function GroupView({
+  group,
+  tracePath,
+  anyTraces,
+  view,
+  onView,
+}: {
+  group: Group;
+  tracePath: string | null;
+  anyTraces: boolean;
+  view: TokenView;
+  onView: (v: TokenView) => void;
+}) {
   const names = [...new Set(group.samples.flatMap((s) => Object.keys(components(s))))];
   const maxAbs = Math.max(...group.samples.map((s) => Math.abs(s.advantage)));
+  const traces = useJson<TraceRow[]>(tracePath);
+  const traceRows = tracePath && traces.state === "ready" ? traces.data : null;
+  const bySample = new Map(traceRows?.map((t) => [t.sample_idx, t]));
+  const unavailable = traceRows ? unavailableViews(traceRows) : {};
+  // a view the URL asked for that this group can't show falls back to text
+  const shown: TokenView = traceRows && !unavailable[view] ? view : "text";
+  const scale = traceRows && shown !== "text" ? groupScale(traceRows, shown) : null;
   return (
     <section className="flex min-w-0 flex-col gap-4" aria-label={`Group ${group.promptId}`}>
       <div className="flex flex-col gap-3 rounded-lg border p-4">
@@ -189,15 +244,32 @@ function GroupView({ group }: { group: Group }) {
           <span className="ml-auto font-mono text-muted-foreground">{group.promptId}</span>
         </div>
         <p className="max-w-[75ch] text-base leading-relaxed whitespace-pre-wrap">{group.prompt}</p>
+        {traceRows && (
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <TokenViewPicker view={shown} onChange={onView} unavailable={unavailable} />
+            {scale && <ScaleLegend view={shown} scale={scale} />}
+          </div>
+        )}
       </div>
       <div className="grid gap-3 xl:grid-cols-2">
         {group.samples.map((s) => (
-          <SampleCard key={s.sample_idx} row={s} maxAbsAdvantage={maxAbs} />
+          <SampleCard
+            key={s.sample_idx}
+            row={s}
+            maxAbsAdvantage={maxAbs}
+            trace={bySample.get(s.sample_idx)}
+            view={shown}
+            scale={scale}
+          />
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        Reward = {names.join(" + ") || "total"} (weighted). Per-token traces (KL, entropy, ratio)
-        weren&apos;t recorded for these runs, so there&apos;s no token heatmap yet.
+        Reward = {names.join(" + ") || "total"} (weighted).{" "}
+        {tracePath
+          ? null
+          : anyTraces
+            ? "Per-token traces were recorded for a few groups per logged step (marked “tokens” in the list); this isn’t one of them."
+            : "This run didn’t record per-token traces, so there’s no token heatmap."}
       </p>
     </section>
   );
