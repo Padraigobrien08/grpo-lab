@@ -90,6 +90,34 @@ export function groupMetrics(keys: string[]): MetricGroup[] {
   return groups;
 }
 
+// Readable names for chart legends and tooltips; the raw key stays visible in tooltips.
+const METRIC_LABELS: Record<string, string> = {
+  "eval/accuracy": "Eval accuracy",
+  "eval/format": "Eval: boxed answer",
+  "eval/truncated_frac": "Eval: truncated",
+  "eval/len_mean": "Eval: length",
+  "reward/mean": "Mean reward",
+  "reward/correct": "Share correct",
+  "reward/format": "Training: boxed answer",
+  "reward/std": "Reward std",
+  "completion/len_mean": "Mean length",
+  "completion/len_max": "Max length",
+  "completion/truncated_frac": "Training: truncated",
+  "clip_frac/low": "Clipped low",
+  "clip_frac/high": "Clipped high",
+  "adv/zero_group_frac": "Zero-advantage groups",
+  "time/gen_s": "Generation",
+  "time/train_s": "Training",
+  "grad_norm": "Gradient norm",
+  kl: "KL",
+  entropy: "Entropy",
+  loss: "Loss",
+};
+
+export function metricLabel(key: string): string {
+  return METRIC_LABELS[key] ?? key;
+}
+
 /** Metrics that are fractions in [0, 1]: shown as percentages, axes clamped to the range. */
 export function isFraction(key: string): boolean {
   return /accuracy|correct|format|frac/.test(key);

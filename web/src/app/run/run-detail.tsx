@@ -89,7 +89,8 @@ export function RunDetailView() {
             max={0.99}
             step={0.01}
             onValueChange={(v) => setSmoothing(Array.isArray(v) ? v[0] : v)}
-            aria-label="Smoothing"
+            thumbLabel="Chart smoothing"
+            valueText={(v) => `Smoothing ${v.toFixed(2)}${v === 0 ? " (raw values)" : ""}`}
           />
           <span className="w-10 text-right tabular-nums">{smoothing.toFixed(2)}</span>
         </label>

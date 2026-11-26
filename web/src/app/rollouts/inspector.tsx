@@ -65,7 +65,11 @@ export function RolloutInspector() {
 
   const stepIdx = stepList.indexOf(step);
   const groups = rows.state === "ready" ? groupRollouts(rows.data) : [];
-  const selected = groups.find((g) => g.promptId === params.get("prompt")) ?? groups[0];
+  // Open on a group that teaches something: one where samples disagree, unless the URL names one.
+  const selected =
+    groups.find((g) => g.promptId === params.get("prompt")) ??
+    groups.find((g) => !g.zeroAdvantage) ??
+    groups[0];
   const tokensParam = params.get("tokens");
   const view: TokenView = isTokenView(tokensParam) ? tokensParam : "text";
 
@@ -104,7 +108,8 @@ export function RolloutInspector() {
             max={stepList.length - 1}
             step={1}
             onValueChange={(v) => go({ step: stepList[Array.isArray(v) ? v[0] : v] })}
-            aria-label="Logged step"
+            thumbLabel="Logged step"
+            valueText={(i) => `Step ${stepList[i]} of ${stepList.at(-1)}`}
           />
         </div>
         <Button
