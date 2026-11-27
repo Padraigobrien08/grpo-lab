@@ -29,7 +29,7 @@ export const STATUS = [
   "85 tests green",
   "Qwen2.5-0.5B on GSM8K",
   "+6.0 pts greedy over base",
-  "M7: 1 of 4 runs back",
+  "M7 done: $5.87 of GPU",
 ];
 
 export const JOURNAL: JournalEntry[] = [
@@ -153,21 +153,24 @@ export const JOURNAL: JournalEntry[] = [
   },
   {
     id: "m7",
-    date: "2026-11-26",
+    date: "2026-11-27",
     milestone: "M7 · RQ1 ablations",
-    status: "in-progress",
-    title: "The first Dr. GRPO seed lands right where vanilla GRPO did",
+    title: "Neither recipe moves accuracy at 0.5B, but DAPO-lite halves the entropy getting there",
     body: [
-      "Which GRPO design choices matter at this scale? Dr. GRPO drops the per-group std scaling and uses a constant loss normaliser, while DAPO-lite switches to a token-level mean, clip-higher at 0.28 and no KL. Seeds 0 and 1 of each run at the same time, one pod apiece. The baseline is M3's seeds, since nobody touched that config.",
-      "Dr. GRPO seed 0 came back first, from the L40S, about an hour and a half after launch: 53.0% greedy on all 1,319 test problems, +5.4 points over base on the same problems (paired 95% CI [+3.0, +7.8], McNemar p = 1.6e-05). M3's vanilla seeds scored 53.1%, 54.1% and 53.6%, so this one sits at the bottom of their range without falling out of it. It also brought back the project's first real token traces.",
-      "The other three runs are still on their A40s, and each one lands here as it finishes.",
+      "Which GRPO design choices matter at this scale? Dr. GRPO drops the per-group std scaling and uses a constant loss normaliser, while DAPO-lite switches to a token-level mean, clip-higher at 0.28 and no KL. We ran seeds 0 and 1 of each on four pods at once and scored every final checkpoint on all 1,319 test problems, against M3's three vanilla seeds as the baseline.",
+      "Accuracy barely moved. Dr. GRPO scored 53.0% and 52.5% (+5.1 points over base), DAPO-lite 55.3% and 54.4% (+7.2), vanilla 53.6% (+6.0). Against vanilla, Dr. GRPO comes out −0.9 points (Welch 95% CI [−2.6, +0.9]) and DAPO-lite +1.2 ([−5.8, +8.2]); with two seeds each, neither gap is distinguishable from zero.",
+      "The policies, though, ended up in different places. Over the last 20 training steps DAPO-lite's entropy averaged 0.100 against vanilla's 0.203, its answers ran 249 tokens instead of 291, and in 46% of its groups all eight samples agreed (31% for vanilla), so nearly half its batches taught it nothing. Dr. GRPO matched vanilla on all three and drifted half as far from the reference model (KL 0.006 against 0.012).",
     ],
     figures: [
-      { value: "53.0%", label: "Dr. GRPO seed 0, greedy, full test set" },
-      { value: "+5.4", label: "points over base, paired 95% CI [+3.0, +7.8]" },
+      { value: "−0.9 / +1.2", label: "points vs vanilla, Dr. GRPO / DAPO-lite; both CIs cross zero" },
+      { value: "0.100 vs 0.203", label: "policy entropy, DAPO-lite vs vanilla, last 20 steps" },
+      { value: "$5.87", label: "of GPU for all four runs, read off the RunPod balance" },
     ],
     caveat:
-      "One seed says nothing about the recipe yet: vanilla GRPO's own seeds spread over a full point, so Dr. GRPO's second seed has to land before we can compare the two. Even then, two seeds make for wide intervals (a t-multiplier of 12.7). DAPO-lite also lacks dynamic sampling and the overlong penalty; neither exists in the trainer yet.",
-    links: [{ label: "Compare", href: "/compare" }],
+      "Two seeds per variant is thin, and the Welch intervals round their degrees of freedom down, so they err wide. DAPO-lite collapsing its entropy without losing accuracy held for 300 steps; it may not hold for longer runs, and with 46% of groups carrying no signal, DAPO's dynamic sampling (which drops those groups and resamples) is exactly the piece this run left out. A third seed of each, and that sampler, come next.",
+    links: [
+      { label: "Compare", href: "/compare" },
+      { label: "PR #8", href: "https://github.com/Padraigobrien08/grpo-lab/pull/8" },
+    ],
   },
 ];
