@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function LoadingBlock({ rows = 3 }: { rows?: number }) {
@@ -62,10 +64,22 @@ export function InspectorSkeleton({ bodyOnly = false }: { bodyOnly?: boolean }) 
 }
 
 export function ErrorBlock({ error }: { error: string }) {
+  const notFound = /\b404\b/.test(error);
   return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert">
-      <p className="font-medium">Couldn&apos;t load data</p>
-      <p className="mt-1 font-mono text-xs text-muted-foreground">{error}</p>
+    <div
+      className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+      role="alert"
+    >
+      <p className="font-medium">{notFound ? "Not found" : "Couldn\u2019t load data"}</p>
+      <p className="text-muted-foreground">
+        {notFound
+          ? "This run or step isn\u2019t in the data. The link may be old, or the dashboard was exported before the run finished."
+          : "The data didn\u2019t load. Reload the page; if it keeps failing, the snapshot or API may be missing this file."}
+      </p>
+      <Link href="/" className="w-fit text-sm font-medium underline underline-offset-4">
+        Back to all runs
+      </Link>
+      <p className="font-mono text-xs text-muted-foreground/80">{error}</p>
     </div>
   );
 }

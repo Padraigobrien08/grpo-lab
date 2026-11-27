@@ -12,7 +12,15 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import type { Metrics } from "@/lib/api";
-import { ema, formatMetric, formatTick, isFraction, niceTicks, stepTicks } from "@/lib/metrics";
+import {
+  ema,
+  formatMetric,
+  formatTick,
+  isFraction,
+  metricLabel,
+  niceTicks,
+  stepTicks,
+} from "@/lib/metrics";
 
 // Series with fewer points than this (e.g. eval, every 25 steps) are drawn raw: smoothing a
 // dozen points mostly just lags them.
@@ -43,7 +51,7 @@ export function MetricChart({
   // Metric keys contain "/", which can't appear in the CSS variables the chart uses for color.
   const series = keys.map((key, i) => ({ key, id: `s${i}`, points: metrics[key] ?? [] }));
   const config: ChartConfig = Object.fromEntries(
-    series.map((s, i) => [s.id, { label: s.key, color: `var(--chart-${(i % 5) + 1})` }]),
+    series.map((s, i) => [s.id, { label: metricLabel(s.key), color: `var(--chart-${(i % 5) + 1})` }]),
   );
 
   const rows = new Map<number, Record<string, number>>();
@@ -121,7 +129,12 @@ export function MetricChart({
                   }}
                   formatter={(value, name) => (
                     <div className="flex w-full justify-between gap-4">
-                      <span className="text-muted-foreground">{config[String(name)]?.label}</span>
+                      <span className="text-muted-foreground">
+                        {config[String(name)]?.label}{" "}
+                        <span className="font-mono text-[0.7rem] opacity-70">
+                          {keys[Number(String(name).slice(1))]}
+                        </span>
+                      </span>
                       <span className="font-mono tabular-nums">
                         {formatMetric(Number(value), keys[Number(String(name).slice(1))])}
                       </span>

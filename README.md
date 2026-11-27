@@ -5,7 +5,9 @@ looking inside training: **[grpo-lab-seven.vercel.app](https://grpo-lab-seven.ve
 (recorded runs; no GPU or server behind it). See [SPEC.md](SPEC.md) for the research questions, scope and milestones.
 
 **Status:** MVP done (M0–M4: scaffold, algorithm core, first GSM8K run, eval harness, dashboard).
-Next: M5 (parity with TRL's `GRPOTrainer`) and the RQ1 ablations; see [SPEC.md](SPEC.md) §6.
+M7 (RQ1 ablations) has its first sweep: two seeds each of Dr. GRPO and DAPO-lite, below. Next: a
+third seed of each, DAPO's dynamic sampling, and M5 (parity with TRL's `GRPOTrainer`); see
+[SPEC.md](SPEC.md) §6.
 
 ## Result
 
@@ -22,6 +24,26 @@ p ≤ 1.1e-05).
   models.
 - Rebuild the figure from the committed comparison:
   `uv run --group report python scripts/report_figures.py`.
+
+### M7: does the recipe matter at 0.5B?
+
+Two published variants against the vanilla GRPO above, each trained 300 steps with the same
+config apart from the overrides shown (`scripts/m7_run.sh`), and scored the same way: the final
+checkpoint, greedy, on all 1319 test problems.
+
+| Variant | Overrides | Seeds (greedy %) | Mean | vs base | vs vanilla, Welch 95% CI | Entropy | Length |
+|---|---|---|---|---|---|---|---|
+| Vanilla GRPO (M3) | none | 53.1, 54.1, 53.6 | 53.6 | +6.0 | (baseline) | 0.203 | 291 |
+| Dr. GRPO | `advantage_scale=none`, `loss_aggregation=constant` | 53.0, 52.5 | 52.7 | +5.1 | −0.9 [−2.6, +0.9] | 0.233 | 294 |
+| DAPO-lite | `loss_aggregation=token_mean`, `clip_eps_high=0.28`, `beta=0` | 55.3, 54.4 | 54.8 | +7.2 | +1.2 [−5.8, +8.2] | 0.100 | 249 |
+
+Entropy and length are means over each run's last 20 training steps. With two seeds per variant
+neither accuracy gap is distinguishable from zero. The training behaviour is: DAPO-lite halves
+the policy's entropy and writes answers about 15% shorter, and 46% of its groups end with all eight
+samples agreeing (31% for vanilla), so close to half its batches carry no learning signal. That
+is the problem DAPO's dynamic sampling exists to fix, and "lite" leaves it out. Comparisons are
+in `report/m7-drgrpo.json` and `report/m7-dapo-lite.json` (`evaluate compare --json`). The four
+runs cost $5.87 of GPU.
 
 ## Layout
 
@@ -129,10 +151,12 @@ uv run evaluate compare evals/base evals/<run_a> evals/<run_b> evals/<run_c> \
 
 ## Dashboard (M4)
 
-Three views over the run store: **Runs** (final metrics and the config keys that differ between
+Four views over the run store: **Runs** (final metrics and the config keys that differ between
 runs), **Run detail** (metric curves with EMA smoothing; click a chart to open the rollouts logged
-nearest that step) and the **Rollout inspector** (pick a logged step and a prompt to see all G
-samples with their rewards, advantages, lengths and boxed answers).
+nearest that step), the **Rollout inspector** (pick a logged step and a prompt to see all G
+samples with their rewards, advantages, lengths and boxed answers) and **Compare** (runs grouped
+by training config, seeds pooled: a mean curve with a 95% t-band per group, labelled by what each
+group changes relative to the baseline, the group with the most runs).
 
 **Token heatmap.** On every rollout-logging step the trainer also records per-token traces for
 the first `log.trace_groups` groups (default 2; `0` turns it off). For those groups, marked
@@ -140,8 +164,8 @@ the first `log.trace_groups` groups (default 2; `0` turns it off). For those gro
 (−log p under the sampling policy), **entropy**, **KL** to the reference, or the **ratio**
 π/π_old. One scale is shared across the group so siblings compare token by token; hover a token
 for all its values. The values are copied from tensors the update already computes, so tracing
-adds no forward passes. On GSM8K it should add about 7 MB of snapshot JSON per 300-step run
-(projected from ~50 bytes per token on a smoke run).
+adds no forward passes. On GSM8K it adds 5–9 MB of snapshot JSON per 300-step run (measured on
+the four M7 runs; shorter answers make smaller traces).
 Ratio is exactly 1 when `algo.num_iterations` is 1, and KL is absent when `algo.beta` is 0, so
 the inspector disables those views.
 

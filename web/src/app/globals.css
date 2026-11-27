@@ -164,3 +164,174 @@
     font-size: 1.05em;
   }
 }
+/* ---- /journal: the lab notebook, in the editorial style of nanogpt-pob.dev -------------------
+   Scoped to .journal so the dashboard pages keep their own look. Warm paper, near-black ink,
+   one teal accent; serif for prose, mono only for measured figures and code. */
+.journal {
+  --paper: #f3f2f2;
+  --ink: #201e1d;
+  --ink-2: #57524f;
+  --accent: #006786;
+  --rule: #d8d5d3;
+  --code-bg: #e7e5e4;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-serif), Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  .journal {
+    --paper: #171615;
+    --ink: #ecebe8;
+    --ink-2: #b1aca7;
+    --accent: #6cc0dc;
+    --rule: #3a3735;
+    --code-bg: #2a2826;
+  }
+}
+.journal ::selection {
+  background: color-mix(in oklch, var(--accent) 25%, transparent);
+  color: var(--ink);
+}
+.journal a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  text-underline-offset: 0.2em;
+}
+.journal a:hover {
+  text-decoration-color: currentColor;
+}
+.journal :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.journal code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.82em;
+  background: var(--code-bg);
+  padding: 0.08em 0.3em;
+  border-radius: 3px;
+}
+.journal-head h1 {
+  font-size: clamp(2.1rem, 1.4rem + 3vw, 3.4rem);
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  max-width: 21ch;
+  text-wrap: balance;
+}
+.journal-lede {
+  margin-top: 1.25rem;
+  max-width: 62ch;
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+.journal-status {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  border-block: 1px solid var(--ink);
+  padding-block: 0.45rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.journal-entry {
+  margin-top: 4.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  scroll-margin-top: 1.5rem;
+}
+.journal-meta {
+  font-size: 0.78rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+.journal-live {
+  margin-left: 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  font-size: 0.7rem;
+}
+.journal-title {
+  margin-top: 0.6rem;
+  font-size: clamp(1.55rem, 1.2rem + 1.4vw, 2.2rem);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  max-width: 30ch;
+  text-wrap: balance;
+}
+.journal-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.journal-title a:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+.journal-figures {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 1.25rem 2rem;
+}
+/* Value above its caption, values top-aligned across the row whatever the caption length.
+   The markup keeps dt before dd, so a screen reader hears the label first. */
+.journal-figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.journal-figures dd {
+  order: -1;
+}
+.journal-figures dd {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 1.65rem;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.journal-figures dt {
+  font-size: 0.92rem;
+  line-height: 1.4;
+  color: var(--ink-2);
+  max-width: 24ch;
+}
+.journal-body {
+  margin-top: 1.5rem;
+  font-size: 1.1rem;
+  line-height: 1.65;
+}
+.journal-body p + p {
+  margin-top: 1rem;
+}
+@media (min-width: 768px) {
+  .journal-body {
+    columns: 2;
+    column-gap: 2.5rem;
+  }
+  .journal-body p {
+    break-inside: avoid-column;
+  }
+}
+.journal-caveat em {
+  font-weight: 600;
+}
+.journal-links {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  font-size: 0.95rem;
+}

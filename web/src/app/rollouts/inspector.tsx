@@ -65,9 +65,18 @@ export function RolloutInspector() {
 
   const stepIdx = stepList.indexOf(step);
   const groups = rows.state === "ready" ? groupRollouts(rows.data) : [];
-  const selected = groups.find((g) => g.promptId === params.get("prompt")) ?? groups[0];
   const tokensParam = params.get("tokens");
   const view: TokenView = isTokenView(tokensParam) ? tokensParam : "text";
+  // Default group, unless the URL names one: a traced group that teaches something (samples
+  // disagree), so the token heatmap is there to see; any traced group if a heatmap view was
+  // asked for; otherwise the first group with a learning signal.
+  const isTraced = (g: Group) => traced.has(g.groupIdx);
+  const selected =
+    groups.find((g) => g.promptId === params.get("prompt")) ??
+    groups.find((g) => isTraced(g) && !g.zeroAdvantage) ??
+    (view !== "text" ? groups.find(isTraced) : undefined) ??
+    groups.find((g) => !g.zeroAdvantage) ??
+    groups[0];
 
   return (
     <>
@@ -104,7 +113,8 @@ export function RolloutInspector() {
             max={stepList.length - 1}
             step={1}
             onValueChange={(v) => go({ step: stepList[Array.isArray(v) ? v[0] : v] })}
-            aria-label="Logged step"
+            thumbLabel="Logged step"
+            valueText={(i) => `Step ${stepList[i]} of ${stepList.at(-1)}`}
           />
         </div>
         <Button
