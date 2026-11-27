@@ -132,7 +132,7 @@ export const JOURNAL: JournalEntry[] = [
     ],
     figures: [
       { value: "0", label: "extra forward passes" },
-      { value: "~7 MB", label: "snapshot JSON per 300-step run, projected from ~50 bytes a token" },
+      { value: "5–9 MB", label: "of trace JSON per 300-step run, measured on the four M7 runs" },
     ],
     caveat:
       "With one optimisation pass per batch the ratio is exactly 1, true of every run so far, so that view stays disabled until a run uses μ > 1. And the deployed runs predate traces entirely, so they have no heatmap.",

@@ -164,8 +164,8 @@ the first `log.trace_groups` groups (default 2; `0` turns it off). For those gro
 (−log p under the sampling policy), **entropy**, **KL** to the reference, or the **ratio**
 π/π_old. One scale is shared across the group so siblings compare token by token; hover a token
 for all its values. The values are copied from tensors the update already computes, so tracing
-adds no forward passes. On GSM8K it should add about 7 MB of snapshot JSON per 300-step run
-(projected from ~50 bytes per token on a smoke run).
+adds no forward passes. On GSM8K it adds 5–9 MB of snapshot JSON per 300-step run (measured on
+the four M7 runs; shorter answers make smaller traces).
 Ratio is exactly 1 when `algo.num_iterations` is 1, and KL is absent when `algo.beta` is 0, so
 the inspector disables those views.
 
